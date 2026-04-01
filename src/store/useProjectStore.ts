@@ -231,11 +231,46 @@ export const useProjectStore = create<ProjectState>()(
 
     async play() {
       await audioEngine.start();
+
+      // Lazily create synth/drum tracks if not yet created
+      const { project } = get();
+      for (const track of project.tracks) {
+        if (track.type === 'synth') {
+          if (!audioEngine.getSynth(track.id)) {
+            audioEngine.createSynthTrack(track.id, track.synthSettings);
+          }
+          // Start melodic sequencer if pattern has notes
+          const pattern = track.patterns[0];
+          if (pattern && pattern.notes.length > 0) {
+            audioEngine.startMelodicSequencer(track.id, pattern, (step) => {
+              get().setCurrentStep(step);
+            });
+          }
+        } else if (track.type === 'drum') {
+          const pattern = track.patterns[0];
+          if (pattern) {
+            audioEngine.createDrumSequencer(track.id, pattern, (step) => {
+              get().setCurrentStep(step);
+            });
+          }
+        }
+      }
+
+      audioEngine.setBPM(project.bpm);
       audioEngine.play();
       set(draft => { draft.isPlaying = true; });
     },
 
     stop() {
+      // Stop all sequencers
+      const { project } = get();
+      for (const track of project.tracks) {
+        if (track.type === 'drum') {
+          audioEngine.stopDrumSequencer(track.id);
+        } else if (track.type === 'synth') {
+          audioEngine.stopMelodicSequencer(track.id);
+        }
+      }
       audioEngine.stop();
       set(draft => {
         draft.isPlaying = false;
@@ -363,6 +398,14 @@ export const useProjectStore = create<ProjectState>()(
         pattern.stepData[drumRow][step] = !pattern.stepData[drumRow][step];
         draft.project.modifiedAt = new Date().toISOString();
       });
+      // Hot-reload drum sequencer with updated pattern while playing
+      if (get().isPlaying) {
+        const track = get().project.tracks.find(t => t.id === trackId);
+        const pattern = track?.patterns.find(p => p.id === patternId);
+        if (track?.type === 'drum' && pattern) {
+          audioEngine.createDrumSequencer(trackId, pattern, (s) => get().setCurrentStep(s));
+        }
+      }
     },
 
     addNote(trackId, patternId, note) {

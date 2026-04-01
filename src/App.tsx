@@ -407,7 +407,7 @@ function BottomPanel({ height }: { height: number }) {
             <PianoRoll
               trackId={selectedTrack.id}
               patternId={selectedPattern.id}
-              onClose={() => {}}
+              onClose={() => setActiveTab('sequencer')}
             />
           </div>
         ) : activeTab === 'piano-roll' ? (

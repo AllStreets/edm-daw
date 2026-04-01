@@ -294,6 +294,7 @@ export function AIPanel() {
     generateChordProgression,
     generateDrumPattern,
     generateBassline,
+    generateMelody,
     applyAIPrompt,
     isGenerating,
     lastGeneratedChords,
@@ -301,13 +302,19 @@ export function AIPanel() {
     setAISettings,
   } = useAIStore();
 
-  const { project, selectedTrackId } = useProjectStore();
+  const {
+    project, selectedTrackId,
+    updateSynthSettings, toggleStep,
+    addNote,
+  } = useProjectStore();
 
   const [activeTab, setActiveTab] = useState<Tab>('Chords');
   const [prompt, setPrompt] = useState('');
+  const [promptApplied, setPromptApplied] = useState('');
   const [selectedTrackForAI, setSelectedTrackForAI] = useState(selectedTrackId ?? project.tracks[0]?.id ?? '');
   const [genChords, setGenChords] = useState<string[]>(lastGeneratedChords);
   const [genPattern, setGenPattern] = useState<boolean[][]>([]);
+  const [genNotes, setGenNotes] = useState<{ pitch: number; startStep: number; duration: number; velocity: number }[]>([]);
   const [showDrumPreview, setShowDrumPreview] = useState(false);
   const [showBassPreview, setShowBassPreview] = useState(false);
   const [showMelodyPreview, setShowMelodyPreview] = useState(false);
@@ -341,15 +348,53 @@ export function AIPanel() {
     setShowDrumPreview(true);
   }, [generateDrumPattern, aiSettings.genre]);
 
+  const handleApplyDrums = useCallback(() => {
+    const drumTrack = project.tracks.find(t => t.type === 'drum');
+    if (!drumTrack || genPattern.length === 0) return;
+    const pattern = drumTrack.patterns[0];
+    if (!pattern) return;
+    // Write each row's steps
+    for (let row = 0; row < genPattern.length; row++) {
+      for (let step = 0; step < genPattern[row].length; step++) {
+        const current = pattern.stepData[row]?.[step] ?? false;
+        if (current !== genPattern[row][step]) {
+          toggleStep(drumTrack.id, pattern.id, row, step);
+        }
+      }
+    }
+  }, [project.tracks, genPattern, toggleStep]);
+
   const handleGenerateBassline = useCallback(() => {
     const chords = genChords.length > 0 ? genChords : ['Am', 'F', 'C', 'G'];
-    generateBassline(chords);
+    const notes = generateBassline(chords);
+    setGenNotes(notes);
     setShowBassPreview(true);
   }, [generateBassline, genChords]);
 
+  const handleApplyBassline = useCallback(() => {
+    const bassTrack = project.tracks.find(t => t.name.toLowerCase().includes('bass') && t.type === 'synth')
+      ?? project.tracks.find(t => t.type === 'synth');
+    if (!bassTrack) return;
+    const pattern = bassTrack.patterns[0];
+    if (!pattern) return;
+    genNotes.forEach(n => addNote(bassTrack.id, pattern.id, { ...n, id: crypto.randomUUID() }));
+  }, [project.tracks, genNotes, addNote]);
+
   const handleGenerateMelody = useCallback(() => {
+    const chords = genChords.length > 0 ? genChords : ['Am', 'F', 'C', 'G'];
+    const notes = generateMelody(chords);
+    setGenNotes(notes);
     setShowMelodyPreview(true);
-  }, []);
+  }, [genChords, generateMelody]);
+
+  const handleApplyMelody = useCallback(() => {
+    const leadTrack = project.tracks.find(t => t.name.toLowerCase().includes('lead') && t.type === 'synth')
+      ?? project.tracks.find(t => t.type === 'synth');
+    if (!leadTrack) return;
+    const pattern = leadTrack.patterns[0];
+    if (!pattern) return;
+    genNotes.forEach(n => addNote(leadTrack.id, pattern.id, { ...n, id: crypto.randomUUID() }));
+  }, [project.tracks, genNotes, addNote]);
 
   const handleAnalyzeMix = useCallback(() => {
     setAnalyzeDone(true);
@@ -357,8 +402,10 @@ export function AIPanel() {
 
   const handleApplyPrompt = useCallback(() => {
     if (!prompt.trim() || !selectedTrackForAI) return;
-    applyAIPrompt(prompt, selectedTrackForAI);
-  }, [prompt, selectedTrackForAI, applyAIPrompt]);
+    const newSettings = applyAIPrompt(prompt, selectedTrackForAI);
+    updateSynthSettings(selectedTrackForAI, newSettings);
+    setPromptApplied(newSettings.preset ?? 'AI Preset');
+  }, [prompt, selectedTrackForAI, applyAIPrompt, updateSynthSettings]);
 
   const mixSuggestions = [
     { title: 'Lead Synth', suggestion: 'Boost 3kHz +2dB, add slight reverb (wet: 20%)' },
@@ -493,11 +540,31 @@ export function AIPanel() {
                   ))}
                 </div>
                 <button
+                  onClick={() => {
+                    const synthTrack = project.tracks.find(t => t.type === 'synth');
+                    if (synthTrack && genChords.length > 0) {
+                      // Write chord root notes into the pattern as a simple chord stab
+                      const pattern = synthTrack.patterns[0];
+                      if (pattern) {
+                        genChords.forEach((chord, i) => {
+                          const root = chord.replace(/m$/, '');
+                          const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+                          const midiBase = 60 + NOTES.indexOf(root);
+                          if (midiBase >= 60) {
+                            addNote(synthTrack.id, pattern.id, { id: crypto.randomUUID(), pitch: midiBase, startStep: i * 16, duration: 14, velocity: 90 });
+                            // add fifth
+                            addNote(synthTrack.id, pattern.id, { id: crypto.randomUUID(), pitch: midiBase + 7, startStep: i * 16, duration: 14, velocity: 80 });
+                          }
+                        });
+                      }
+                    }
+                  }}
                   className="text-[10px] font-mono px-3 py-1.5 rounded mt-1 transition-colors"
                   style={{
                     background: '#00d4ff22',
                     color: '#00d4ff',
                     border: '1px solid #00d4ff44',
+                    cursor: 'pointer',
                   }}
                 >
                   Apply to Track
@@ -565,8 +632,9 @@ export function AIPanel() {
                 <SectionLabel>Pattern Preview</SectionLabel>
                 <DrumPatternPreview pattern={genPattern} />
                 <button
+                  onClick={handleApplyDrums}
                   className="text-[10px] font-mono px-3 py-1.5 rounded transition-colors"
-                  style={{ background: '#00d4ff22', color: '#00d4ff', border: '1px solid #00d4ff44' }}
+                  style={{ background: '#00d4ff22', color: '#00d4ff', border: '1px solid #00d4ff44', cursor: 'pointer' }}
                 >
                   Apply to Drum Track
                 </button>
@@ -613,8 +681,9 @@ export function AIPanel() {
                 <SectionLabel>Preview</SectionLabel>
                 <MiniPianoRoll noteCount={12} />
                 <button
+                  onClick={handleApplyBassline}
                   className="text-[10px] font-mono px-3 py-1.5 rounded transition-colors"
-                  style={{ background: '#00d4ff22', color: '#00d4ff', border: '1px solid #00d4ff44' }}
+                  style={{ background: '#00d4ff22', color: '#00d4ff', border: '1px solid #00d4ff44', cursor: 'pointer' }}
                 >
                   Apply to Bass Track
                 </button>
@@ -666,8 +735,9 @@ export function AIPanel() {
                 <SectionLabel>Preview</SectionLabel>
                 <MiniPianoRoll noteCount={16} />
                 <button
+                  onClick={handleApplyMelody}
                   className="text-[10px] font-mono px-3 py-1.5 rounded transition-colors"
-                  style={{ background: '#9945ff22', color: '#9945ff', border: '1px solid #9945ff44' }}
+                  style={{ background: '#9945ff22', color: '#9945ff', border: '1px solid #9945ff44', cursor: 'pointer' }}
                 >
                   Apply to Synth Track
                 </button>
@@ -784,12 +854,12 @@ export function AIPanel() {
               Configure Synth
             </GradientButton>
 
-            {prompt && (
+            {promptApplied && (
               <div
                 className="p-2 rounded text-[10px] font-mono"
                 style={{ background: '#0a1a0a', border: '1px solid #00aa4433', color: '#00aa44' }}
               >
-                AI will analyze: "{prompt.slice(0, 60)}{prompt.length > 60 ? '...' : ''}"
+                ✓ Applied preset "{promptApplied}" to {project.tracks.find(t => t.id === selectedTrackForAI)?.name ?? 'track'}
               </div>
             )}
           </>

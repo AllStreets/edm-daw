@@ -342,8 +342,7 @@ export const TransportBar: React.FC = () => {
 
   const handleViewChange = useCallback((view: ViewTab) => {
     setActiveView(view);
-    if (view === 'session') setActivePanel('session');
-    else if (view === 'arrangement') setActivePanel('arrangement');
+    setActivePanel(view as 'session' | 'arrangement' | 'mixer');
   }, [setActiveView, setActivePanel]);
 
   // Suppress unused warning — activePanel is read for future use
