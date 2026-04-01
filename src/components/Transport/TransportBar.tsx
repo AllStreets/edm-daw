@@ -315,7 +315,7 @@ const ViewSwitcher: React.FC<ViewSwitcherProps> = ({ active, onChange }) => {
 export const TransportBar: React.FC = () => {
   const { project, isPlaying, isRecording, currentStep, play, stop, pause, record, setBPM, setActiveView, activeView } =
     useProjectStore();
-  const { setActivePanel, activePanel } = useUIStore();
+  const { setActivePanel, activePanel, setBottomPanelTab } = useUIStore();
 
   const [loopActive, setLoopActive] = useState(false);
   const [masterVolume, setMasterVolume] = useState(project.masterVolume);
@@ -393,19 +393,33 @@ export const TransportBar: React.FC = () => {
       }}>
 
         {/* ── Logo ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 80, flexShrink: 0 }}>
-          <div style={{
+        <button
+          onClick={() => {
+            setActivePanel('session');
+            setBottomPanelTab('sequencer');
+          }}
+          title="Home — Session View"
+          style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+            minWidth: 80, flexShrink: 0,
+            background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+          }}
+          onMouseEnter={e => { (e.currentTarget.querySelector('.logo-text') as HTMLElement).style.textShadow = '0 0 18px #9945ffff, 0 0 36px #9945ffaa'; }}
+          onMouseLeave={e => { (e.currentTarget.querySelector('.logo-text') as HTMLElement).style.textShadow = '0 0 12px #9945ffcc, 0 0 24px #9945ff66'; }}
+        >
+          <div className="logo-text" style={{
             fontSize: 16,
             fontWeight: 900,
             letterSpacing: 2,
             color: '#9945ff',
             textShadow: '0 0 12px #9945ffcc, 0 0 24px #9945ff66',
             lineHeight: 1,
+            transition: 'text-shadow 0.15s',
           }}>
             EDM<span style={{ color: '#00d4ff', textShadow: '0 0 12px #00d4ffcc' }}>•</span>DAW
           </div>
           <div style={{ fontSize: 9, color: '#443366', letterSpacing: 2, fontWeight: 600, marginTop: 2 }}>v1.0</div>
-        </div>
+        </button>
 
         {/* ── Divider ── */}
         <div style={{ width: 1, height: 30, background: '#1e1e3a', flexShrink: 0 }} />

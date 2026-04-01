@@ -19,10 +19,12 @@ interface UIState {
   effectsRackTrackId: string | null;
   bottomPanelHeight: number;
   leftPanelWidth: number;
+  bottomPanelTab: 'sequencer' | 'piano-roll' | 'ai' | 'visualizer';
   notifications: Notification[];
 
   // Actions
   setSidebarOpen: (open: boolean) => void;
+  setBottomPanelTab: (tab: UIState['bottomPanelTab']) => void;
   toggleSidebar: () => void;
   setSampleBrowserOpen: (open: boolean) => void;
   setActivePanel: (panel: ActivePanel) => void;
@@ -50,7 +52,12 @@ export const useUIStore = create<UIState>()(
     effectsRackTrackId: null,
     bottomPanelHeight: 280,
     leftPanelWidth: 200,
+    bottomPanelTab: 'sequencer',
     notifications: [],
+
+    setBottomPanelTab(tab) {
+      set(draft => { draft.bottomPanelTab = tab; });
+    },
 
     setSidebarOpen(open) {
       set(draft => { draft.sidebarOpen = open; });

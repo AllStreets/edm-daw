@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useProjectStore } from './store/useProjectStore';
 import { useUIStore } from './store/useUIStore';
@@ -386,7 +386,7 @@ function ArrangementPlaceholder() {
 
 function BottomPanel({ height }: { height: number }) {
   const { project, selectedTrackId } = useProjectStore();
-  const [activeTab, setActiveTab] = useState<BottomTab>('sequencer');
+  const { bottomPanelTab: activeTab, setBottomPanelTab: setActiveTab } = useUIStore();
 
   const selectedTrack = project.tracks.find(t => t.id === selectedTrackId);
   const selectedPattern = selectedTrack?.patterns[0];
@@ -407,7 +407,7 @@ function BottomPanel({ height }: { height: number }) {
             <PianoRoll
               trackId={selectedTrack.id}
               patternId={selectedPattern.id}
-              onClose={() => setActiveTab('sequencer')}
+              onClose={() => setActiveTab('sequencer' as const)}
             />
           </div>
         ) : activeTab === 'piano-roll' ? (
