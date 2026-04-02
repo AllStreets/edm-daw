@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { DRUM_PRESETS, DRUM_PRESET_NAMES } from '../../data/presets';
 
@@ -131,6 +131,15 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
   );
   const [velocities, setVelocities] = useState<number[]>(Array(8).fill(100));
   const [selectedPreset, setSelectedPreset] = useState('');
+  // Track which sample name is "loaded" on each drum row (visual only)
+  const [rowSamples, setRowSamples] = useState<(string | null)[]>(Array(8).fill(null));
+  const [dragOverRow, setDragOverRow] = useState<number | null>(null);
+
+  // Selection state
+  const [selAnchor, setSelAnchor] = useState<{ row: number; step: number } | null>(null);
+  const [selRect, setSelRect] = useState<{ rowMin: number; rowMax: number; stepMin: number; stepMax: number } | null>(null);
+  const stepClipboard = useRef<Array<{ row: number; stepOffset: number; on: boolean }>>([]);
+  const isDragSelecting = useRef(false);
 
   if (!track || !pattern) {
     return (
@@ -218,7 +227,87 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
     });
   };
 
+  // ── Sample drag-and-drop onto rows ─────────────────────────────────────────
+
+  const handleRowDragOver = (e: React.DragEvent, _row: number) => {
+    if (e.dataTransfer.types.includes('application/x-daw-sample')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  };
+
+  const handleRowDrop = (e: React.DragEvent, row: number) => {
+    e.preventDefault();
+    setDragOverRow(null);
+    const raw = e.dataTransfer.getData('application/x-daw-sample');
+    if (!raw) return;
+    try {
+      const { name } = JSON.parse(raw) as { name: string; category: string };
+      const displayName = name.replace(/_/g, ' ').replace(/\.[^.]+$/, '');
+      setRowSamples(prev => {
+        const next = [...prev];
+        next[row] = displayName;
+        return next;
+      });
+    } catch {
+      // ignore invalid drop data
+    }
+  };
+
+  // ── Copy/paste keydown listener ─────────────────────────────────────────────
+
+  useEffect(() => {
+    const IS_MAC = typeof navigator !== 'undefined'
+      ? ((navigator as any).userAgentData?.platform ?? navigator.platform).toUpperCase().includes('MAC')
+      : false;
+
+    const onKey = (e: KeyboardEvent) => {
+      const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+
+      if (mod && e.key === 'c' && selRect) {
+        e.preventDefault();
+        const items: Array<{ row: number; stepOffset: number; on: boolean }> = [];
+        for (let r = selRect.rowMin; r <= selRect.rowMax; r++) {
+          for (let s = selRect.stepMin; s <= selRect.stepMax; s++) {
+            items.push({ row: r - selRect.rowMin, stepOffset: s - selRect.stepMin, on: stepData[r]?.[s] ?? false });
+          }
+        }
+        stepClipboard.current = items;
+        return;
+      }
+
+      if (mod && e.key === 'v' && stepClipboard.current.length > 0) {
+        e.preventDefault();
+        const pasteCol = selRect ? selRect.stepMin : 0;
+        stepClipboard.current.forEach(({ row, stepOffset, on }) => {
+          const targetStep = pasteCol + stepOffset;
+          const targetRow = row;
+          if (targetStep < stepCount && targetRow < 8) {
+            const current = stepData[targetRow]?.[targetStep] ?? false;
+            if (current !== on) toggleStep(trackId, patternId, targetRow, targetStep);
+          }
+        });
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        setSelRect(null);
+        setSelAnchor(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selRect, stepData, stepCount, toggleStep, trackId, patternId]);
+
   // ── Render helpers ──────────────────────────────────────────────────────────
+
+  const isCellSelected = (row: number, step: number): boolean => {
+    if (!selRect) return false;
+    return (
+      row >= selRect.rowMin && row <= selRect.rowMax &&
+      step >= selRect.stepMin && step <= selRect.stepMax
+    );
+  };
 
   const renderStepButton = (row: number, step: number) => {
     const isOn = stepData[row]?.[step] ?? false;
@@ -249,12 +338,49 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
       buttonStyle.boxShadow = (buttonStyle.boxShadow ?? '') + ', 0 0 12px rgba(255,255,255,0.3)';
     }
 
+    if (isCellSelected(row, step)) {
+      buttonStyle.outline = '2px solid rgba(0,180,255,0.8)';
+      buttonStyle.outlineOffset = '-2px';
+    }
+
     return (
       <button
         key={step}
         style={buttonStyle}
         className={className}
-        onMouseDown={() => handleToggleStep(row, step)}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          isDragSelecting.current = false;
+          setSelAnchor({ row, step });
+          setSelRect({ rowMin: row, rowMax: row, stepMin: step, stepMax: step });
+
+          const onMove = () => {
+            isDragSelecting.current = true;
+          };
+          const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            if (!isDragSelecting.current) {
+              // It was a click — toggle and clear selection
+              handleToggleStep(row, step);
+              setSelRect(null);
+              setSelAnchor(null);
+            }
+            isDragSelecting.current = false;
+          };
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup', onUp);
+        }}
+        onMouseEnter={() => {
+          if (selAnchor && isDragSelecting.current) {
+            setSelRect({
+              rowMin: Math.min(selAnchor.row, row),
+              rowMax: Math.max(selAnchor.row, row),
+              stepMin: Math.min(selAnchor.step, step),
+              stepMax: Math.max(selAnchor.step, step),
+            });
+          }
+        }}
         aria-label={`Row ${row} step ${step + 1} ${isOn ? 'on' : 'off'}`}
       >
         {isOn && (
@@ -318,14 +444,35 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
         {/* Left: drum names + volume sliders */}
         <div className="flex flex-col gap-1.5 flex-shrink-0">
           {DRUM_NAMES.map((name, row) => (
-            <div key={row} className="flex items-center gap-2 h-8">
+            <div
+              key={row}
+              className="flex items-center gap-2 h-8 rounded px-1 transition-colors"
+              style={{
+                background: dragOverRow === row ? `${DRUM_COLORS[row]}22` : 'transparent',
+                border: dragOverRow === row ? `1px dashed ${DRUM_COLORS[row]}88` : '1px solid transparent',
+              }}
+              onDragOver={e => { handleRowDragOver(e, row); setDragOverRow(row); }}
+              onDragLeave={() => setDragOverRow(null)}
+              onDrop={e => handleRowDrop(e, row)}
+            >
               <span
                 className="w-2 h-2 rounded-full flex-shrink-0"
                 style={{ backgroundColor: DRUM_COLORS[row], boxShadow: `0 0 4px ${DRUM_COLORS[row]}88` }}
               />
-              <span className="text-gray-300 text-[11px] font-medium w-[60px] leading-none truncate">
-                {name}
-              </span>
+              <div className="flex flex-col leading-none w-[60px]">
+                <span className="text-gray-300 text-[11px] font-medium truncate">
+                  {name}
+                </span>
+                {rowSamples[row] && (
+                  <span
+                    className="text-[8px] truncate"
+                    style={{ color: DRUM_COLORS[row], opacity: 0.8 }}
+                    title={rowSamples[row]!}
+                  >
+                    {rowSamples[row]}
+                  </span>
+                )}
+              </div>
               <input
                 type="range"
                 min={0}
@@ -343,7 +490,16 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
         <div className="flex-1 overflow-x-auto">
           <div className="flex flex-col gap-1.5 min-w-max">
             {DRUM_NAMES.map((_name, row) => (
-              <div key={row} className="flex gap-0.5 items-center h-8">
+              <div
+                key={row}
+                className="flex gap-0.5 items-center h-8 rounded transition-colors"
+                style={{
+                  background: dragOverRow === row ? `${DRUM_COLORS[row]}15` : 'transparent',
+                }}
+                onDragOver={e => { handleRowDragOver(e, row); setDragOverRow(row); }}
+                onDragLeave={() => setDragOverRow(null)}
+                onDrop={e => handleRowDrop(e, row)}
+              >
                 {Array.from({ length: visibleSteps }, (_, step) => (
                   <React.Fragment key={step}>
                     {step > 0 && step % 4 === 0 && (
