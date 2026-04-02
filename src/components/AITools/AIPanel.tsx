@@ -814,88 +814,37 @@ export function AIPanel() {
         {/* ==================== SONG TAB ==================== */}
         {activeTab === 'Song' && (
           <>
-            {/* Header */}
-            <div
-              className="p-3 rounded"
-              style={{
-                background: 'linear-gradient(135deg, #0e0a1a, #0a101a)',
-                border: '1px solid #2a1a4a',
-              }}
-            >
-              <div
-                className="text-xs font-bold font-mono tracking-widest mb-2 text-center"
-                style={{
-                  background: 'linear-gradient(90deg, #9945ff, #00d4ff)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                }}
-              >
-                ✦ FULL SONG GENERATOR
-              </div>
-
-              {/* Model selector */}
-              <div className="flex gap-2">
+            {/* Header + Model selector — compact single row */}
+            <div className="flex items-center gap-2 flex-wrap" style={{ gap: '6px' }}>
+              <span className="text-[9px] font-bold font-mono tracking-widest" style={{
+                background: 'linear-gradient(90deg, #9945ff, #00d4ff)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}>✦ FULL SONG GENERATOR</span>
+              <div className="flex gap-1 ml-auto">
                 {MODELS.map(m => {
                   const isSelected = selectedModel === m.id;
                   return (
                     <button
                       key={m.id}
                       onClick={() => setSelectedModel(m.id)}
-                      className="flex-1 rounded p-2 text-left transition-all"
+                      className="rounded px-2 py-1 text-left transition-all"
                       style={{
                         background: isSelected ? '#9945ff22' : '#0a0a14',
                         border: `1px solid ${isSelected ? '#9945ff88' : '#1a1a2a'}`,
                         cursor: 'pointer',
                       }}
                     >
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[10px] font-bold font-mono" style={{ color: isSelected ? '#9945ff' : '#666' }}>
-                          {m.label}
-                        </span>
-                        <span className="text-[9px] font-mono" style={{ color: isSelected ? '#00d4ff' : '#444' }}>
-                          {m.cost}
-                        </span>
-                      </div>
-                      <div className="text-[8px] font-mono" style={{ color: '#444' }}>{m.desc}</div>
+                      <span className="text-[9px] font-bold font-mono" style={{ color: isSelected ? '#9945ff' : '#555' }}>
+                        {m.label}
+                      </span>
+                      <span className="text-[8px] font-mono ml-1" style={{ color: isSelected ? '#00d4ff' : '#333' }}>
+                        {m.cost}
+                      </span>
                     </button>
                   );
                 })}
               </div>
-              <div className="text-[9px] font-mono text-center mt-2" style={{ color: '#333' }}>
-                Drops directly into your session · Auto-plays on completion
-              </div>
-            </div>
-
-            {/* API Key */}
-            <div>
-              <SectionLabel>Anthropic API Key</SectionLabel>
-              <div className="flex gap-1">
-                <input
-                  type={showApiKey ? 'text' : 'password'}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-ant-..."
-                  className="flex-1 rounded px-2 py-1 text-[11px] font-mono outline-none"
-                  style={{
-                    background: '#0e0e1c',
-                    color: apiKey ? '#9945ff' : '#444',
-                    border: `1px solid ${apiKey ? '#9945ff44' : '#2a2a3a'}`,
-                    caretColor: '#9945ff',
-                  }}
-                />
-                <button
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="px-2 rounded text-[10px] font-mono"
-                  style={{ background: '#1a1a2a', color: '#555', border: '1px solid #2a2a3a' }}
-                >
-                  {showApiKey ? '●' : '○'}
-                </button>
-              </div>
-              {!apiKey && (
-                <div className="text-[9px] font-mono text-gray-600 mt-1">
-                  Get yours at console.anthropic.com
-                </div>
-              )}
             </div>
 
             {/* Song Description */}
@@ -944,6 +893,33 @@ export function AIPanel() {
               ))}
             </div>
 
+            {/* API Key — inline above button so it's always visible */}
+            <div>
+              <SectionLabel>Anthropic API Key</SectionLabel>
+              <div className="flex gap-1">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-ant-api03-... (get yours at console.anthropic.com)"
+                  className="flex-1 rounded px-2 py-1 text-[11px] font-mono outline-none"
+                  style={{
+                    background: '#0e0e1c',
+                    color: apiKey ? '#9945ff' : '#444',
+                    border: `1px solid ${apiKey ? '#9945ff44' : '#ff444433'}`,
+                    caretColor: '#9945ff',
+                  }}
+                />
+                <button
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="px-2 rounded text-[10px] font-mono"
+                  style={{ background: '#1a1a2a', color: '#555', border: '1px solid #2a2a3a' }}
+                >
+                  {showApiKey ? '●' : '○'}
+                </button>
+              </div>
+            </div>
+
             {/* Generate button */}
             <div style={{ display: 'flex' }}>
               <GradientButton
@@ -951,7 +927,7 @@ export function AIPanel() {
                 loading={songGenerating}
                 disabled={!apiKey.trim() || !songPrompt.trim()}
               >
-                Generate Full Song
+                {!apiKey.trim() ? '⚠ Enter API Key to Generate' : 'Generate Full Song'}
               </GradientButton>
             </div>
 
