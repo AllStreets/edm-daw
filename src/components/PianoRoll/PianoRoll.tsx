@@ -111,6 +111,7 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
     origPitch?: number;
     origDuration?: number;
     draftNote?: Note;
+    origPositions?: Map<string, { startStep: number; pitch: number }>;
   } | null>(null);
 
   // ── Velocity lane drag ──────────────────────────────────────────────────────
@@ -228,19 +229,56 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
     (e: React.MouseEvent, note: Note, resizing: boolean) => {
       e.stopPropagation();
       if (e.button === 0) {
-        setSelectedNoteIds(new Set([note.id]));
-        dragRef.current = {
-          type: resizing ? 'resize' : 'move',
-          noteId: note.id,
-          startX: e.clientX,
-          startY: e.clientY,
-          origStart: note.startStep,
-          origPitch: note.pitch,
-          origDuration: note.duration,
-        };
+        const rawX = (() => {
+          if (!gridRef.current) return e.clientX;
+          const rect = (gridRef.current as Element).getBoundingClientRect();
+          const scrollEl = scrollRef.current!;
+          return e.clientX - rect.left + scrollEl.scrollLeft;
+        })();
+        const rawY = (() => {
+          if (!gridRef.current) return e.clientY;
+          const rect = (gridRef.current as Element).getBoundingClientRect();
+          const scrollEl = scrollRef.current!;
+          return e.clientY - rect.top + scrollEl.scrollTop;
+        })();
+
+        if (resizing) {
+          setSelectedNoteIds(new Set([note.id]));
+          dragRef.current = {
+            type: 'resize',
+            noteId: note.id,
+            startX: rawX,
+            startY: rawY,
+            origStart: note.startStep,
+            origPitch: note.pitch,
+            origDuration: note.duration,
+          };
+        } else {
+          // Build origPositions for all selected notes (multi-move support)
+          const origPositions = new Map<string, { startStep: number; pitch: number }>();
+          // Always include the note being dragged
+          origPositions.set(note.id, { startStep: note.startStep, pitch: note.pitch });
+          // If this note is part of the selection, also include all other selected notes
+          if (selectedNoteIds.has(note.id)) {
+            notes.forEach(n => {
+              if (n.id !== note.id && selectedNoteIds.has(n.id)) {
+                origPositions.set(n.id, { startStep: n.startStep, pitch: n.pitch });
+              }
+            });
+          }
+          dragRef.current = {
+            type: 'move',
+            noteId: note.id,
+            startX: rawX,
+            startY: rawY,
+            origStart: note.startStep,
+            origPitch: note.pitch,
+            origPositions,
+          };
+        }
       }
     },
-    []
+    [selectedNoteIds, notes]
   );
 
   const handleNoteRightClick = useCallback(
@@ -275,14 +313,20 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
       if (!drag) return;
 
       const dx = e.clientX - drag.startX;
-      const dy = e.clientY - drag.startY;
       const stepDelta = Math.round((dx / stepWidth) / snap) * snap;
-      const pitchDelta = -Math.round(dy / rowHeight);
 
-      if (drag.type === 'move' && drag.noteId) {
-        const newStart = Math.max(0, (drag.origStart ?? 0) + stepDelta);
-        const newPitch = Math.max(MIDI_MIN, Math.min(MIDI_MAX, (drag.origPitch ?? 60) + pitchDelta));
-        updateNote(trackId, patternId, drag.noteId, { startStep: newStart, pitch: newPitch });
+      if (drag.type === 'move' && drag.noteId && drag.origPositions) {
+        const scrollEl = scrollRef.current!;
+        const svgRect = gridRef.current!.getBoundingClientRect();
+        const rawX = e.clientX - svgRect.left + scrollEl.scrollLeft;
+        const rawY = e.clientY - svgRect.top + scrollEl.scrollTop;
+        const deltaStep = Math.round((rawX - drag.startX) / stepWidth / snap) * snap;
+        const deltaPitch = -Math.round((rawY - drag.startY) / rowHeight);
+        drag.origPositions.forEach((orig, nid) => {
+          const newStart = Math.max(0, orig.startStep + deltaStep);
+          const newPitch = Math.max(MIDI_MIN, Math.min(MIDI_MAX, orig.pitch + deltaPitch));
+          updateNote(trackId, patternId, nid, { startStep: newStart, pitch: newPitch });
+        });
       } else if (drag.type === 'resize' && drag.noteId) {
         const newDuration = Math.max(snap, (drag.origDuration ?? snap) + stepDelta);
         updateNote(trackId, patternId, drag.noteId, { duration: newDuration });
