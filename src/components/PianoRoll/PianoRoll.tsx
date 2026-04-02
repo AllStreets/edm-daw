@@ -117,6 +117,9 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
   // ── Velocity lane drag ──────────────────────────────────────────────────────
   const velDragRef = useRef<{ noteId: string; startY: number; origVel: number } | null>(null);
 
+  // ── Clipboard for copy/paste ─────────────────────────────────────────────────
+  const clipboardRef = useRef<Array<{ pitch: number; startOffset: number; duration: number; velocity: number }>>([]);
+
   // ── Tooltip ─────────────────────────────────────────────────────────────────
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
 
@@ -152,21 +155,74 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
   const trackColor = track?.color ?? '#9945ff';
   const { r, g, b } = hexToRgb(trackColor);
 
-  // ── Key down for delete ──────────────────────────────────────────────────────
+  // ── Key down for delete, copy, paste, select all ──────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+
+      // Delete / Backspace
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNoteIds.size > 0) {
         selectedNoteIds.forEach(id => removeNote(trackId, patternId, id));
         setSelectedNoteIds(new Set());
+        return;
       }
+
+      // Escape
       if (e.key === 'Escape') {
         setSelectedNoteIds(new Set());
         setContextMenu(null);
+        return;
+      }
+
+      // Cmd+A — select all
+      if (mod && e.key === 'a') {
+        e.preventDefault();
+        setSelectedNoteIds(new Set(notes.map(n => n.id)));
+        return;
+      }
+
+      // Cmd+C — copy selected
+      if (mod && e.key === 'c' && selectedNoteIds.size > 0) {
+        e.preventDefault();
+        const selected = notes.filter(n => selectedNoteIds.has(n.id));
+        const earliest = Math.min(...selected.map(n => n.startStep));
+        clipboardRef.current = selected.map(n => ({
+          pitch: n.pitch,
+          startOffset: n.startStep - earliest,
+          duration: n.duration,
+          velocity: n.velocity,
+        }));
+        return;
+      }
+
+      // Cmd+V — paste
+      if (mod && e.key === 'v' && clipboardRef.current.length > 0) {
+        e.preventDefault();
+        // Paste after the last existing note
+        const pasteStart = notes.length > 0
+          ? Math.max(...notes.map(n => n.startStep + n.duration))
+          : 0;
+        const newIds = new Set<string>();
+        clipboardRef.current.forEach(item => {
+          const newNote: Note = {
+            id: crypto.randomUUID(),
+            pitch: item.pitch,
+            startStep: pasteStart + item.startOffset,
+            duration: item.duration,
+            velocity: item.velocity,
+          };
+          addNote(trackId, patternId, newNote);
+          newIds.add(newNote.id);
+        });
+        setSelectedNoteIds(newIds);
+        return;
       }
     };
+
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedNoteIds, removeNote, trackId, patternId]);
+  }, [selectedNoteIds, removeNote, addNote, trackId, patternId, notes]);
 
   // ── Grid mouse events ────────────────────────────────────────────────────────
 
