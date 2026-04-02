@@ -559,7 +559,10 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
 
   if (!track || !pattern) {
     return (
-      <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center">
+      <div style={embedded
+        ? { height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.8)' }
+        : { position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+      }>
         <div className="text-gray-400">Pattern not found</div>
       </div>
     );
@@ -568,9 +571,11 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
   return (
     <div
       style={{
-        ...(embedded
-          ? { height: '100%', display: 'flex', flexDirection: 'column', background: '#080810', fontFamily: 'monospace' }
-          : { position: 'fixed', inset: 0, zIndex: 50, display: 'flex', flexDirection: 'column', background: '#080810', fontFamily: 'monospace' }),
+        display: 'flex',
+        flexDirection: 'column',
+        background: '#080810',
+        fontFamily: 'monospace',
+        ...(embedded ? { height: '100%' } : { position: 'fixed', inset: 0, zIndex: 50 }),
       }}
     >
       {/* ── Header ── */}
