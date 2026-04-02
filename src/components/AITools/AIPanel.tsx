@@ -927,7 +927,7 @@ export function AIPanel() {
                 loading={songGenerating}
                 disabled={!apiKey.trim() || !songPrompt.trim()}
               >
-                {!apiKey.trim() ? '⚠ Enter API Key to Generate' : 'Generate Full Song'}
+                {!apiKey.trim() ? '⚠ Enter API Key Above' : !songPrompt.trim() ? '⚠ Describe Your Song First' : 'Generate Full Song'}
               </GradientButton>
             </div>
 
