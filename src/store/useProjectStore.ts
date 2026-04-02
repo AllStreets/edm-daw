@@ -302,7 +302,7 @@ export const useProjectStore = create<ProjectState>()(
     },
 
     stop() {
-      const { project } = get();
+      const { project, isRecording } = get();
       for (const track of project.tracks) {
         // Stop both drum and melodic sequencers for every track (safe to call even if not running)
         audioEngine.stopDrumSequencer(track.id);
@@ -314,6 +314,11 @@ export const useProjectStore = create<ProjectState>()(
         draft.isRecording = false;
         draft.currentStep = 0;
       });
+      // If recording was active, finalize it and auto-download instead of leaving
+      // the Tone.Recorder dangling (accumulating instances causes audio degradation)
+      if (isRecording) {
+        get().stopRecording();
+      }
     },
 
     pause() {
