@@ -181,10 +181,8 @@ export function SampleBrowser({ onClose }: SampleBrowserProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const { selectedTrackId, updateSynthSettings } = useProjectStore(s => ({
-    selectedTrackId: s.selectedTrackId,
-    updateSynthSettings: s.updateSynthSettings,
-  }));
+  const selectedTrackId = useProjectStore(s => s.selectedTrackId);
+  const updateSynthSettings = useProjectStore(s => s.updateSynthSettings);
 
   const isPresetCategory = ['Leads', 'Basses', 'Pads', 'FX Presets'].includes(selectedCategory);
 

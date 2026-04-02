@@ -447,6 +447,8 @@ export function AIPanel() {
   const [analyzeDone, setAnalyzeDone] = useState(false);
   const [bassStyle, setBassStyle] = useState<'Simple' | 'Walking' | 'Aggressive' | 'Melodic'>('Simple');
   const [melodyComplexity, setMelodyComplexity] = useState(0.5);
+  const [melodyRange, setMelodyRange] = useState(0.5);
+  const [melodyRhythm, setMelodyRhythm] = useState(0.4);
 
   // Song generator state
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('claude_api_key') ?? '');
@@ -917,7 +919,7 @@ export function AIPanel() {
             </div>
 
             {/* Quick examples */}
-            <div className="flex flex-wrap gap-1">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 8px' }}>
               {[
                 'dark dubstep drop',
                 'euphoric future bass',
@@ -928,8 +930,12 @@ export function AIPanel() {
                 <button
                   key={ex}
                   onClick={() => setSongPrompt(ex)}
-                  className="text-[9px] font-mono px-2 py-0.5 rounded transition-colors"
-                  style={{ background: '#0e0e1c', color: '#555', border: '1px solid #1a1a2a' }}
+                  style={{
+                    fontSize: 9, fontFamily: 'monospace', fontWeight: 600,
+                    padding: '3px 8px', borderRadius: 4,
+                    background: '#0e0e1c', color: '#555', border: '1px solid #1a1a2a',
+                    cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}
                   onMouseEnter={(e) => { e.currentTarget.style.color = '#9945ff'; e.currentTarget.style.borderColor = '#9945ff44'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.color = '#555'; e.currentTarget.style.borderColor = '#1a1a2a'; }}
                 >
@@ -1236,12 +1242,18 @@ export function AIPanel() {
 
             <div>
               <SectionLabel>Range</SectionLabel>
-              <SliderInput value={0.5} onChange={() => {}} />
+              <SliderInput value={melodyRange} onChange={setMelodyRange} />
+              <div className="flex justify-between text-[8px] font-mono text-gray-600 mt-1">
+                <span>Narrow</span><span>Wide</span>
+              </div>
             </div>
 
             <div>
               <SectionLabel>Rhythm Variation</SectionLabel>
-              <SliderInput value={0.4} onChange={() => {}} />
+              <SliderInput value={melodyRhythm} onChange={setMelodyRhythm} />
+              <div className="flex justify-between text-[8px] font-mono text-gray-600 mt-1">
+                <span>Steady</span><span>Varied</span>
+              </div>
             </div>
 
             <GradientButton onClick={handleGenerateMelody} loading={isGenerating}>
@@ -1338,16 +1350,16 @@ export function AIPanel() {
 
             <div>
               <SectionLabel>Examples</SectionLabel>
-              <div className="flex flex-wrap gap-1.5">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 8px' }}>
                 {promptExamples.map((ex) => (
                   <button
                     key={ex}
                     onClick={() => setPrompt(ex)}
-                    className="text-[9px] font-mono px-2 py-0.5 rounded transition-colors"
                     style={{
-                      background: '#0e0e1c',
-                      color: '#555',
-                      border: '1px solid #1a1a2a',
+                      fontSize: 9, fontFamily: 'monospace', fontWeight: 600,
+                      padding: '3px 8px', borderRadius: 4,
+                      background: '#0e0e1c', color: '#555', border: '1px solid #1a1a2a',
+                      cursor: 'pointer', whiteSpace: 'nowrap',
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.color = '#9945ff';
