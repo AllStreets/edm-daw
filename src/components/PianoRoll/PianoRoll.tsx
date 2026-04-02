@@ -96,6 +96,11 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
+  // Rubber band selection
+  const [selectionRect, setSelectionRect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const rubberBandRef = useRef<{ startX: number; startY: number } | null>(null);
+  const selectionRectRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+
   // ── Drag state ──────────────────────────────────────────────────────────────
   const dragRef = useRef<{
     type: 'move' | 'resize' | 'draw';
@@ -185,7 +190,15 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
     (e: React.MouseEvent) => {
       if (e.button !== 0) return;
       setContextMenu(null);
-      const { step, pitch } = getGridPos(e);
+      const { step, pitch, rawX, rawY } = getGridPos(e);
+
+      if (tool === 'select') {
+        rubberBandRef.current = { startX: rawX, startY: rawY };
+        const rect = { x1: rawX, y1: rawY, x2: rawX, y2: rawY };
+        setSelectionRect(rect);
+        selectionRectRef.current = rect;
+        return;
+      }
 
       if (tool === 'pencil') {
         const newNote: Note = {
@@ -206,8 +219,6 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
           draftNote: newNote,
         };
         setSelectedNoteIds(new Set([newNote.id]));
-      } else if (tool === 'select') {
-        setSelectedNoteIds(new Set());
       }
     },
     [tool, getGridPos, addNote, trackId, patternId, snap]
@@ -243,6 +254,23 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
+      if (rubberBandRef.current) {
+        const scrollEl = scrollRef.current!;
+        const svgEl = gridRef.current!;
+        const rect = svgEl.getBoundingClientRect();
+        const rawX = e.clientX - rect.left + scrollEl.scrollLeft;
+        const rawY = e.clientY - rect.top + scrollEl.scrollTop;
+        const newRect = {
+          x1: rubberBandRef.current.startX,
+          y1: rubberBandRef.current.startY,
+          x2: rawX,
+          y2: rawY,
+        };
+        selectionRectRef.current = newRect;
+        setSelectionRect(newRect);
+        return;
+      }
+
       const drag = dragRef.current;
       if (!drag) return;
 
@@ -265,6 +293,32 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
     };
 
     const onMouseUp = () => {
+      if (rubberBandRef.current) {
+        const sr = selectionRectRef.current;
+        if (sr) {
+          const minX = Math.min(sr.x1, sr.x2);
+          const maxX = Math.max(sr.x1, sr.x2);
+          const minY = Math.min(sr.y1, sr.y2);
+          const maxY = Math.max(sr.y1, sr.y2);
+          const ids = new Set<string>(
+            notes
+              .filter(n => {
+                const nx = stepToX(n.startStep, stepWidth);
+                const ny = (MIDI_MAX - n.pitch) * rowHeight;
+                const nw = n.duration * stepWidth;
+                const nh = rowHeight;
+                return nx < maxX && nx + nw > minX && ny < maxY && ny + nh > minY;
+              })
+              .map(n => n.id)
+          );
+          setSelectedNoteIds(ids);
+        }
+        rubberBandRef.current = null;
+        selectionRectRef.current = null;
+        setSelectionRect(null);
+        return;
+      }
+
       dragRef.current = null;
     };
 
@@ -274,7 +328,7 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [stepWidth, rowHeight, snap, updateNote, trackId, patternId]);
+  }, [stepWidth, rowHeight, snap, updateNote, trackId, patternId, notes]);
 
   // ── Velocity lane ─────────────────────────────────────────────────────────
 
@@ -769,6 +823,19 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
               >
                 {renderGridLines()}
                 {renderNotes()}
+                {/* Rubber band selection rect */}
+                {selectionRect && (
+                  <rect
+                    x={Math.min(selectionRect.x1, selectionRect.x2)}
+                    y={Math.min(selectionRect.y1, selectionRect.y2)}
+                    width={Math.abs(selectionRect.x2 - selectionRect.x1)}
+                    height={Math.abs(selectionRect.y2 - selectionRect.y1)}
+                    fill="rgba(0, 180, 255, 0.1)"
+                    stroke="rgba(0, 180, 255, 0.6)"
+                    strokeWidth={1}
+                    style={{ pointerEvents: 'none' }}
+                  />
+                )}
                 {/* Playhead */}
                 <line
                   x1={playheadX}
