@@ -1,14 +1,22 @@
 import * as Tone from 'tone';
 
 export const DRUM_NAMES = [
-  'Kick',
-  'Snare',
-  'Clap',
-  'HiHat Closed',
-  'HiHat Open',
-  'Tom',
-  'Rim',
-  'Cymbal',
+  'Kick',         // 0
+  'Snare',        // 1
+  'Clap',         // 2
+  'HiHat Closed', // 3
+  'HiHat Open',   // 4
+  'Tom',          // 5
+  'Rim',          // 6
+  'Cymbal',       // 7
+  'Kick 2',       // 8
+  'Snare 2',      // 9
+  'Crash',        // 10
+  'Ride',         // 11
+  'Tom Hi',       // 12
+  'Tom Lo',       // 13
+  'Impact',       // 14
+  'Reverse',      // 15
 ] as const;
 
 export type DrumName = typeof DRUM_NAMES[number];
@@ -99,6 +107,74 @@ export class DrumMachine {
     });
     cymbal.frequency.value = 300;
     this.addVoice(7, cymbal, new Tone.Gain(0.35), 'C1', '4n', destination);
+
+    // 8: Kick 2 — distorted industrial kick
+    const kick2 = new Tone.MembraneSynth({
+      pitchDecay: 0.04,
+      octaves: 14,
+      envelope: { attack: 0.001, decay: 0.25, sustain: 0, release: 0.2 },
+    });
+    this.addVoice(8, kick2, new Tone.Gain(1.1), 'C1', '8n', destination);
+
+    // 9: Snare 2 — tight electronic rimshot
+    const snare2 = new Tone.NoiseSynth({
+      noise: { type: 'white' },
+      envelope: { attack: 0.001, decay: 0.08, sustain: 0, release: 0.04 },
+    });
+    this.addVoice(9, snare2, new Tone.Gain(0.75), 'C1', '32n', destination);
+
+    // 10: Crash — long metallic swell
+    const crash = new Tone.MetalSynth({
+      envelope: { attack: 0.002, decay: 1.2, release: 0.4 },
+      harmonicity: 5.8,
+      modulationIndex: 48,
+      resonance: 2800,
+      octaves: 2.5,
+    });
+    crash.frequency.value = 250;
+    this.addVoice(10, crash, new Tone.Gain(0.3), 'C1', '2n', destination);
+
+    // 11: Ride — metallic ring
+    const ride = new Tone.MetalSynth({
+      envelope: { attack: 0.001, decay: 0.5, release: 0.15 },
+      harmonicity: 7.2,
+      modulationIndex: 28,
+      resonance: 3500,
+      octaves: 1.8,
+    });
+    ride.frequency.value = 350;
+    this.addVoice(11, ride, new Tone.Gain(0.35), 'C1', '4n', destination);
+
+    // 12: Tom Hi — mid-pitch drum body
+    const tomHi = new Tone.MembraneSynth({
+      pitchDecay: 0.05,
+      octaves: 5,
+      envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.15 },
+    });
+    this.addVoice(12, tomHi, new Tone.Gain(0.85), 'D2', '8n', destination);
+
+    // 13: Tom Lo — low-pitch drum body
+    const tomLo = new Tone.MembraneSynth({
+      pitchDecay: 0.07,
+      octaves: 7,
+      envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.2 },
+    });
+    this.addVoice(13, tomLo, new Tone.Gain(0.9), 'A1', '8n', destination);
+
+    // 14: Impact — sub thud + noise burst for drops
+    const impact = new Tone.MembraneSynth({
+      pitchDecay: 0.12,
+      octaves: 12,
+      envelope: { attack: 0.001, decay: 0.5, sustain: 0, release: 0.4 },
+    });
+    this.addVoice(14, impact, new Tone.Gain(1.2), 'B0', '4n', destination);
+
+    // 15: Reverse — reverse-style noise swell (simulated with slow attack)
+    const reverse = new Tone.NoiseSynth({
+      noise: { type: 'pink' },
+      envelope: { attack: 0.25, decay: 0.1, sustain: 0.3, release: 0.2 },
+    });
+    this.addVoice(15, reverse, new Tone.Gain(0.5), 'C1', '4n', destination);
   }
 
   private addVoice(
