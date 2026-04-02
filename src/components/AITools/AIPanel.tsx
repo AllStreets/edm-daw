@@ -581,38 +581,50 @@ export function AIPanel() {
       const existingSceneIds = [...project.scenes.map(s => s.id)];
       existingSceneIds.forEach(id => removeScene(id));
 
+      // Find tracks by known IDs (from createDefaultProject) — constant across all sections
+      const leadTrack = project.tracks.find(t => t.id === 'track-lead');
+      const bassTrack = project.tracks.find(t => t.id === 'track-bass');
+      const padTrack = project.tracks.find(t => t.id === 'track-pad');
+      const drumTrack = project.tracks.find(t => t.id === 'track-drums');
+
+      // Apply synth presets once from the first section
+      if (sections.length > 0) {
+        const firstSection = sections[0];
+        if (leadTrack) {
+          const presetSettings = SYNTH_PRESETS[firstSection.patterns.leadPreset] ?? SYNTH_PRESETS['Supersaw'];
+          updateSynthSettings(leadTrack.id, presetSettings);
+        }
+        if (bassTrack) {
+          const presetSettings = SYNTH_PRESETS[firstSection.patterns.bassPreset] ?? SYNTH_PRESETS['Reese Bass'];
+          updateSynthSettings(bassTrack.id, presetSettings);
+        }
+        if (padTrack) {
+          const presetSettings = SYNTH_PRESETS[firstSection.patterns.padPreset] ?? SYNTH_PRESETS['Lush Pad'];
+          updateSynthSettings(padTrack.id, presetSettings);
+        }
+      }
+
       // For each section: create a scene + patterns per track
-      for (const { name, patterns } of sections) {
+      for (let i = 0; i < sections.length; i++) {
+        const { name, patterns } = sections[i];
         const sceneId = addNamedScene(name);
 
-        const sectionBars = result.plan.sections.find(s => s.name === name)?.bars ?? 8;
+        const sectionBars = result.plan.sections[i]?.bars ?? 8;
         const loopSteps = sectionBars * 16;
 
-        // Find tracks by known IDs (from createDefaultProject)
-        const leadTrack = project.tracks.find(t => t.id === 'track-lead');
-        const bassTrack = project.tracks.find(t => t.id === 'track-bass');
-        const padTrack = project.tracks.find(t => t.id === 'track-pad');
-        const drumTrack = project.tracks.find(t => t.id === 'track-drums');
-
         if (leadTrack) {
-          const presetSettings = SYNTH_PRESETS[patterns.leadPreset] ?? SYNTH_PRESETS['Supersaw'];
-          updateSynthSettings(leadTrack.id, presetSettings);
           const pat = defaultPattern({ name: `${name} Lead`, steps: loopSteps, notes: patterns.lead.notes.map(n => ({ ...n, id: crypto.randomUUID() })) });
           addPatternToTrack(leadTrack.id, pat);
           assignClipToScene(sceneId, leadTrack.id, pat.id);
         }
 
         if (bassTrack) {
-          const presetSettings = SYNTH_PRESETS[patterns.bassPreset] ?? SYNTH_PRESETS['Reese Bass'];
-          updateSynthSettings(bassTrack.id, presetSettings);
           const pat = defaultPattern({ name: `${name} Bass`, steps: loopSteps, notes: patterns.bass.notes.map(n => ({ ...n, id: crypto.randomUUID() })) });
           addPatternToTrack(bassTrack.id, pat);
           assignClipToScene(sceneId, bassTrack.id, pat.id);
         }
 
         if (padTrack) {
-          const presetSettings = SYNTH_PRESETS[patterns.padPreset] ?? SYNTH_PRESETS['Lush Pad'];
-          updateSynthSettings(padTrack.id, presetSettings);
           const pat = defaultPattern({ name: `${name} Pad`, steps: loopSteps, notes: patterns.pad.notes.map(n => ({ ...n, id: crypto.randomUUID() })) });
           addPatternToTrack(padTrack.id, pat);
           assignClipToScene(sceneId, padTrack.id, pat.id);
