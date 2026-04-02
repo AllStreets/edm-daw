@@ -5,7 +5,6 @@ import { generateFullSong } from '../../services/ClaudeSongGenerator';
 import type { GeneratedSongV2 } from '../../services/ClaudeSongGenerator';
 import { defaultPattern } from '../../types';
 import { SYNTH_PRESETS } from '../../engine/SynthPresets';
-import { useUIStore } from '../../store/useUIStore';
 import { audioEngine } from '../../engine/AudioEngine';
 
 // =====================================================
@@ -430,7 +429,6 @@ export function AIPanel() {
     assignClipToScene, addNamedScene, addPatternToTrack, removeScene,
   } = useProjectStore();
 
-  const { setActivePanel, setBottomPanelTab } = useUIStore();
 
   const [activeTab, setActiveTab] = useState<Tab>('Song');
   const [prompt, setPrompt] = useState('');
@@ -716,8 +714,6 @@ export function AIPanel() {
         }
 
         setSongResult(result);
-        setActivePanel('session');
-        setBottomPanelTab('sequencer');
         // Dispose all accumulated Tone.js audio state so the next song starts clean
         audioEngine.resetTracks();
         // Small delay to let state settle before launching
@@ -733,7 +729,7 @@ export function AIPanel() {
   }, [apiKey, selectedModel, songPrompt, isPlaying, stop, setBPM,
       project.tracks, project.scenes, updateSynthSettings, addPatternToTrack,
       assignClipToScene, addNamedScene, removeScene,
-      setActivePanel, setBottomPanelTab, launchScene]);
+      launchScene]);
 
   const handleGenerateChords = useCallback(() => {
     const chords = generateChordProgression();

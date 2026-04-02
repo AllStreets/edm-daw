@@ -98,7 +98,17 @@ class AudioEngine {
     Tone.getTransport().start();
   }
 
+  isPaused(): boolean {
+    return Tone.getTransport().state === 'paused';
+  }
+
   stop(): void {
+    // Release all synth voices immediately to prevent note bleed into next play
+    for (const track of this.tracks.values()) {
+      if (track.synthChain?.synth) {
+        try { track.synthChain.synth.releaseAll(Tone.now()); } catch { /* ignore */ }
+      }
+    }
     Tone.getTransport().stop();
     Tone.getTransport().cancel(0); // purge all pending scheduled events
     Tone.getTransport().position = '0:0:0';

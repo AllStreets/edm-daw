@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import * as Tone from 'tone';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useUIStore } from '../../store/useUIStore';
 
@@ -313,11 +314,25 @@ const ViewSwitcher: React.FC<ViewSwitcherProps> = ({ active, onChange }) => {
 // ─── Main TransportBar ────────────────────────────────────────────────────────
 
 export const TransportBar: React.FC = () => {
-  const { project, isPlaying, isRecording, currentStep, play, stop, pause, startRecording, stopRecording, setBPM, setActiveView, activeView, setMasterVolume } =
+  const { project, isPlaying, isRecording, loopEnabled, currentStep, play, stop, pause, startRecording, stopRecording, toggleLoop, setBPM, setActiveView, activeView, setMasterVolume } =
     useProjectStore();
   const { setActivePanel, activePanel, setBottomPanelTab } = useUIStore();
 
-  const [loopActive, setLoopActive] = useState(false);
+  // Real-time elapsed counter driven by Tone.js transport seconds
+  const [elapsedSecs, setElapsedSecs] = useState(0);
+  useEffect(() => {
+    if (!isPlaying) { setElapsedSecs(0); return; }
+    const id = setInterval(() => {
+      setElapsedSecs(Math.floor(Tone.getTransport().seconds));
+    }, 250);
+    return () => clearInterval(id);
+  }, [isPlaying]);
+
+  const elapsedDisplay = useMemo(() => {
+    const m = Math.floor(elapsedSecs / 60);
+    const s = elapsedSecs % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }, [elapsedSecs]);
 
   const handlePlayPause = useCallback(() => {
     if (isPlaying) {
@@ -339,9 +354,11 @@ export const TransportBar: React.FC = () => {
     if (isRecording) {
       stopRecording();
     } else {
+      // Start recording and playback together
       startRecording();
+      if (!isPlaying) void play();
     }
-  }, [isRecording, startRecording, stopRecording]);
+  }, [isRecording, isPlaying, startRecording, stopRecording, play]);
 
   const handleViewChange = useCallback((view: ViewTab) => {
     setActiveView(view);
@@ -465,10 +482,10 @@ export const TransportBar: React.FC = () => {
 
           {/* Loop */}
           <IconBtn
-            onClick={() => setLoopActive(v => !v)}
-            active={loopActive}
+            onClick={toggleLoop}
+            active={loopEnabled}
             activeColor="#00d4ff"
-            title="Toggle Loop"
+            title={loopEnabled ? 'Loop ON — click to play once' : 'Loop OFF — click to enable loop'}
           >
             <span style={{ fontSize: 13 }}>↺</span>
           </IconBtn>
@@ -503,30 +520,23 @@ export const TransportBar: React.FC = () => {
         </div>
 
         {/* ── Elapsed Timer ── */}
-        {(() => {
-          const totalSecs = currentStep * 15 / project.bpm;
-          const mins = Math.floor(totalSecs / 60);
-          const secs = Math.floor(totalSecs % 60);
-          return (
-            <div style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center',
-              padding: '2px 8px',
-              background: '#050510', border: '1px solid #1a1a2e',
-              borderRadius: 4,
-              minWidth: 54,
-            }}>
-              <div style={{ fontSize: 9, color: '#444', letterSpacing: 1, textTransform: 'uppercase' }}>ELAPSED</div>
-              <div style={{
-                fontFamily: 'monospace', fontSize: 14, fontWeight: 700,
-                color: isPlaying ? '#00cc44' : '#445544', letterSpacing: 1,
-                textShadow: isPlaying ? '0 0 6px #00cc4488' : 'none',
-                transition: 'color 0.3s, text-shadow 0.3s',
-              }}>
-                {mins}:{String(secs).padStart(2, '0')}
-              </div>
-            </div>
-          );
-        })()}
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          padding: '2px 8px',
+          background: '#050510', border: '1px solid #1a1a2e',
+          borderRadius: 4,
+          minWidth: 54,
+        }}>
+          <div style={{ fontSize: 9, color: '#444', letterSpacing: 1, textTransform: 'uppercase' }}>ELAPSED</div>
+          <div style={{
+            fontFamily: 'monospace', fontSize: 14, fontWeight: 700,
+            color: isPlaying ? '#00cc44' : '#445544', letterSpacing: 1,
+            textShadow: isPlaying ? '0 0 6px #00cc4488' : 'none',
+            transition: 'color 0.3s, text-shadow 0.3s',
+          }}>
+            {elapsedDisplay}
+          </div>
+        </div>
 
         {/* ── Flex spacer ── */}
         <div style={{ flex: 1 }} />

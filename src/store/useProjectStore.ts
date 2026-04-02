@@ -106,6 +106,7 @@ interface ProjectState {
   showEffectsRack: boolean;
   isPlaying: boolean;
   isRecording: boolean;
+  loopEnabled: boolean;
   currentStep: number;
   activeSceneId: string | null;
   undoStack: Project[];
@@ -123,6 +124,7 @@ interface ProjectState {
   setBPM: (bpm: number) => void;
   play: () => Promise<void>;
   stop: () => void;
+  toggleLoop: () => void;
   setActiveSceneId: (id: string | null) => void;
   pause: () => void;
   record: () => void;
@@ -186,6 +188,7 @@ export const useProjectStore = create<ProjectState>()(
     showEffectsRack: false,
     isPlaying: false,
     isRecording: false,
+    loopEnabled: false,
     currentStep: 0,
     activeSceneId: null,
     undoStack: [],
@@ -245,7 +248,20 @@ export const useProjectStore = create<ProjectState>()(
     async play() {
       await audioEngine.start();
 
-      const { project, activeSceneId } = get();
+      // If transport is paused, just resume — don't rebuild sequencers (causes note bursts)
+      if (audioEngine.isPaused()) {
+        audioEngine.play();
+        set(draft => { draft.isPlaying = true; });
+        return;
+      }
+
+      const { project, activeSceneId, loopEnabled } = get();
+
+      // Unless looping is enabled, stop after one full pass
+      if (!loopEnabled) {
+        audioEngine.setOnSongEnd(() => get().stop());
+      }
+
       const activeScene = activeSceneId ? project.scenes.find(s => s.id === activeSceneId) : null;
 
       for (const track of project.tracks) {
@@ -303,6 +319,10 @@ export const useProjectStore = create<ProjectState>()(
     pause() {
       audioEngine.pause();
       set(draft => { draft.isPlaying = false; });
+    },
+
+    toggleLoop() {
+      set(draft => { draft.loopEnabled = !draft.loopEnabled; });
     },
 
     record() {
@@ -569,10 +589,17 @@ export const useProjectStore = create<ProjectState>()(
       get().stop();
       set(draft => { draft.activeSceneId = sceneId; });
       if (once) {
-        // Set end callback BEFORE play so it's ready when sequencers are created
+        // Force one-shot regardless of loopEnabled — set callback BEFORE play
         audioEngine.setOnSongEnd(() => get().stop());
+        // Temporarily disable loop so play() doesn't override the callback
+        const wasLooping = get().loopEnabled;
+        if (wasLooping) set(draft => { draft.loopEnabled = false; });
+        void get().play().then(() => {
+          if (wasLooping) set(draft => { draft.loopEnabled = true; });
+        });
+      } else {
+        void get().play();
       }
-      void get().play();
     },
 
     reorderScenes(fromIndex, toIndex) {
