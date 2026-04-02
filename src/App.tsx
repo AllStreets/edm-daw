@@ -445,27 +445,51 @@ function ArrangementPlaceholder() {
 
 function BottomPanel({ height }: { height: number }) {
   const { project, selectedTrackId } = useProjectStore();
-  const { bottomPanelTab: activeTab, setBottomPanelTab: setActiveTab } = useUIStore();
+  const {
+    bottomPanelTab: activeTab,
+    setBottomPanelTab: setActiveTab,
+    pianoRollTrackId,
+    pianoRollPatternId,
+  } = useUIStore();
 
   const selectedTrack = project.tracks.find(t => t.id === selectedTrackId);
-  const selectedPattern = selectedTrack?.patterns[0];
+
+  // Prefer the clip explicitly opened from session view over the track's first pattern
+  const pianoRollTrack = pianoRollTrackId
+    ? project.tracks.find(t => t.id === pianoRollTrackId)
+    : selectedTrack;
+  const pianoRollPattern = pianoRollTrack && pianoRollPatternId
+    ? pianoRollTrack.patterns.find(p => p.id === pianoRollPatternId)
+    : pianoRollTrack?.patterns[0];
+
+  const seqTrack = selectedTrack;
+  const seqPattern = seqTrack?.patterns[0];
+
+  // Auto-switch to piano-roll tab when a clip is opened from session view
+  const prevPianoRollTrackId = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (pianoRollTrackId && pianoRollTrackId !== prevPianoRollTrackId.current) {
+      setActiveTab('piano-roll' as const);
+    }
+    prevPianoRollTrackId.current = pianoRollTrackId ?? null;
+  }, [pianoRollTrackId, setActiveTab]);
 
   return (
     <div style={{ height, display: 'flex', flexDirection: 'column', background: '#0f0f18', flexShrink: 0 }}>
       <BottomTabBar activeTab={activeTab} onTabChange={setActiveTab} />
 
       <div style={{ flex: 1, overflow: 'hidden' }}>
-        {activeTab === 'sequencer' && selectedTrack && selectedPattern ? (
-          <StepSequencer trackId={selectedTrack.id} patternId={selectedPattern.id} />
+        {activeTab === 'sequencer' && seqTrack && seqPattern ? (
+          <StepSequencer trackId={seqTrack.id} patternId={seqPattern.id} />
         ) : activeTab === 'sequencer' ? (
           <EmptyPanelHint icon="seq" text="Select a track to use the step sequencer" />
         ) : null}
 
-        {activeTab === 'piano-roll' && selectedTrack && selectedPattern ? (
+        {activeTab === 'piano-roll' && pianoRollTrack && pianoRollPattern ? (
           <div style={{ height: '100%', overflow: 'hidden' }}>
             <PianoRoll
-              trackId={selectedTrack.id}
-              patternId={selectedPattern.id}
+              trackId={pianoRollTrack.id}
+              patternId={pianoRollPattern.id}
               onClose={() => setActiveTab('sequencer' as const)}
               embedded={true}
             />

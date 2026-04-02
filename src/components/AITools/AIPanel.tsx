@@ -426,7 +426,7 @@ export function AIPanel() {
   const {
     project, selectedTrackId,
     updateSynthSettings, toggleStep,
-    addNote, setBPM, play, stop, isPlaying,
+    addNote, setBPM, play, stop, isPlaying, launchScene,
     assignClipToScene, addNamedScene, addPatternToTrack, removeScene,
   } = useProjectStore();
 
@@ -607,9 +607,11 @@ export function AIPanel() {
       }
 
       // For each section: create a scene + patterns per track
+      let firstSceneId: string | null = null;
       for (let i = 0; i < sections.length; i++) {
         const { name, patterns } = sections[i];
         const sceneId = addNamedScene(name);
+        if (i === 0) firstSceneId = sceneId;
 
         const sectionBars = result.plan.sections[i]?.bars ?? 8;
         const loopSteps = sectionBars * 16;
@@ -650,7 +652,11 @@ export function AIPanel() {
       setSongResult(result);
       setActivePanel('session');
       setBottomPanelTab('sequencer');
-      await play();
+      if (firstSceneId) {
+        launchScene(firstSceneId);
+      } else {
+        void play();
+      }
 
     } catch (err) {
       setSongError(err instanceof Error ? err.message : 'Generation failed');
@@ -660,7 +666,7 @@ export function AIPanel() {
   }, [apiKey, selectedModel, songPrompt, isPlaying, stop, setBPM,
       project.tracks, project.scenes, updateSynthSettings, addPatternToTrack,
       assignClipToScene, addNamedScene, removeScene,
-      setActivePanel, setBottomPanelTab, play]);
+      setActivePanel, setBottomPanelTab, play, launchScene]);
 
   const handleGenerateChords = useCallback(() => {
     const chords = generateChordProgression();

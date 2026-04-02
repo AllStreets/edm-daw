@@ -503,6 +503,32 @@ export const TransportBar: React.FC = () => {
           </div>
         </div>
 
+        {/* ── Elapsed Timer ── */}
+        {(() => {
+          const totalSecs = currentStep * 15 / project.bpm;
+          const mins = Math.floor(totalSecs / 60);
+          const secs = Math.floor(totalSecs % 60);
+          return (
+            <div style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center',
+              padding: '2px 8px',
+              background: '#050510', border: '1px solid #1a1a2e',
+              borderRadius: 4,
+              minWidth: 54,
+            }}>
+              <div style={{ fontSize: 9, color: '#444', letterSpacing: 1, textTransform: 'uppercase' }}>ELAPSED</div>
+              <div style={{
+                fontFamily: 'monospace', fontSize: 14, fontWeight: 700,
+                color: isPlaying ? '#00cc44' : '#445544', letterSpacing: 1,
+                textShadow: isPlaying ? '0 0 6px #00cc4488' : 'none',
+                transition: 'color 0.3s, text-shadow 0.3s',
+              }}>
+                {mins}:{String(secs).padStart(2, '0')}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── Flex spacer ── */}
         <div style={{ flex: 1 }} />
 

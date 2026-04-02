@@ -107,6 +107,7 @@ interface ProjectState {
   isPlaying: boolean;
   isRecording: boolean;
   currentStep: number;
+  activeSceneId: string | null;
   undoStack: Project[];
   redoStack: Project[];
 
@@ -122,6 +123,7 @@ interface ProjectState {
   setBPM: (bpm: number) => void;
   play: () => Promise<void>;
   stop: () => void;
+  setActiveSceneId: (id: string | null) => void;
   pause: () => void;
   record: () => void;
   startRecording: () => void;
@@ -185,6 +187,7 @@ export const useProjectStore = create<ProjectState>()(
     isPlaying: false,
     isRecording: false,
     currentStep: 0,
+    activeSceneId: null,
     undoStack: [],
     redoStack: [],
 
@@ -235,12 +238,23 @@ export const useProjectStore = create<ProjectState>()(
       audioEngine.setBPM(bpm);
     },
 
+    setActiveSceneId(id) {
+      set(draft => { draft.activeSceneId = id; });
+    },
+
     async play() {
       await audioEngine.start();
 
-      const { project } = get();
+      const { project, activeSceneId } = get();
+      const activeScene = activeSceneId ? project.scenes.find(s => s.id === activeSceneId) : null;
+
       for (const track of project.tracks) {
-        const pattern = track.patterns[0];
+        // When a scene is active, use the pattern assigned to that scene for this track.
+        // Fall back to patterns[0] for normal (non-scene) playback.
+        const patternId = activeScene ? activeScene.clips[track.id] : undefined;
+        const pattern = patternId
+          ? track.patterns.find(p => p.id === patternId)
+          : track.patterns[0];
         if (!pattern) continue;
 
         // Create synth for melodic tracks
@@ -547,8 +561,10 @@ export const useProjectStore = create<ProjectState>()(
       const { project } = get();
       const scene = project.scenes.find(s => s.id === sceneId);
       if (!scene) return;
-      // Launch scene = start playback (patterns already loaded)
-      get().play();
+      // Stop current audio, set active scene, then start playback with that scene's clips
+      get().stop();
+      set(draft => { draft.activeSceneId = sceneId; });
+      void get().play();
     },
 
     reorderScenes(fromIndex, toIndex) {
