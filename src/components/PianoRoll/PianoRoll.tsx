@@ -266,6 +266,10 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
               }
             });
           }
+          // If the dragged note is not already selected, make it the only selection
+          if (!selectedNoteIds.has(note.id)) {
+            setSelectedNoteIds(new Set([note.id]));
+          }
           dragRef.current = {
             type: 'move',
             noteId: note.id,
@@ -312,9 +316,6 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
       const drag = dragRef.current;
       if (!drag) return;
 
-      const dx = e.clientX - drag.startX;
-      const stepDelta = Math.round((dx / stepWidth) / snap) * snap;
-
       if (drag.type === 'move' && drag.noteId && drag.origPositions) {
         const scrollEl = scrollRef.current!;
         const svgRect = gridRef.current!.getBoundingClientRect();
@@ -328,9 +329,18 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
           updateNote(trackId, patternId, nid, { startStep: newStart, pitch: newPitch });
         });
       } else if (drag.type === 'resize' && drag.noteId) {
+        const scrollEl = scrollRef.current!;
+        const svgRect = gridRef.current!.getBoundingClientRect();
+        const rawX = e.clientX - svgRect.left + scrollEl.scrollLeft;
+        const dx = rawX - drag.startX;
+        const stepDelta = Math.round((dx / stepWidth) / snap) * snap;
         const newDuration = Math.max(snap, (drag.origDuration ?? snap) + stepDelta);
         updateNote(trackId, patternId, drag.noteId, { duration: newDuration });
       } else if (drag.type === 'draw' && drag.noteId) {
+        const scrollEl = scrollRef.current!;
+        const svgRect = gridRef.current!.getBoundingClientRect();
+        const rawX = e.clientX - svgRect.left + scrollEl.scrollLeft;
+        const dx = rawX - drag.startX;
         const newDuration = Math.max(snap, snap + Math.round((dx / stepWidth) / snap) * snap);
         updateNote(trackId, patternId, drag.noteId, { duration: newDuration });
       }
