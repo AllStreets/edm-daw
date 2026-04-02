@@ -124,6 +124,8 @@ interface ProjectState {
   stop: () => void;
   pause: () => void;
   record: () => void;
+  startRecording: () => void;
+  stopRecording: () => void;
 
   addTrack: (type: Track['type']) => void;
   removeTrack: (id: string) => void;
@@ -288,7 +290,28 @@ export const useProjectStore = create<ProjectState>()(
     },
 
     record() {
-      set(draft => { draft.isRecording = !draft.isRecording; });
+      const { isRecording, startRecording, stopRecording } = get();
+      if (isRecording) stopRecording();
+      else startRecording();
+    },
+
+    startRecording() {
+      audioEngine.startRecording();
+      set(draft => { draft.isRecording = true; });
+    },
+
+    stopRecording() {
+      set(draft => { draft.isRecording = false; });
+      audioEngine.stopRecording().then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `recording-${Date.now()}.mp3`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      });
     },
 
     addTrack(type) {

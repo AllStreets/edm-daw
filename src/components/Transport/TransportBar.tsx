@@ -313,7 +313,7 @@ const ViewSwitcher: React.FC<ViewSwitcherProps> = ({ active, onChange }) => {
 // ─── Main TransportBar ────────────────────────────────────────────────────────
 
 export const TransportBar: React.FC = () => {
-  const { project, isPlaying, isRecording, currentStep, play, stop, pause, record, setBPM, setActiveView, activeView } =
+  const { project, isPlaying, isRecording, currentStep, play, stop, pause, startRecording, stopRecording, setBPM, setActiveView, activeView } =
     useProjectStore();
   const { setActivePanel, activePanel, setBottomPanelTab } = useUIStore();
 
@@ -337,8 +337,12 @@ export const TransportBar: React.FC = () => {
   }, [stop]);
 
   const handleRecord = useCallback(() => {
-    record();
-  }, [record]);
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }, [isRecording, startRecording, stopRecording]);
 
   const handleViewChange = useCallback((view: ViewTab) => {
     setActiveView(view);
