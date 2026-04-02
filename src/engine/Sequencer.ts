@@ -11,12 +11,14 @@ export class Sequencer {
   start(
     pattern: Pattern,
     onStep: StepCallback,
-    drumMachine?: DrumMachine
+    drumMachine?: DrumMachine,
+    onEnd?: () => void
   ): void {
     this.stop();
     this.currentStep = 0;
 
-    const steps = Array.from({ length: pattern.steps }, (_, i) => i);
+    const totalSteps = pattern.steps;
+    const steps = Array.from({ length: totalSteps }, (_, i) => i);
 
     this.sequence = new Tone.Sequence(
       (time: number, step: unknown) => {
@@ -32,6 +34,11 @@ export class Sequencer {
             }
           });
         }
+
+        // Fire onEnd when we reach the last step
+        if (onEnd && s === totalSteps - 1) {
+          setTimeout(onEnd, 0);
+        }
       },
       steps,
       '16n'
@@ -43,12 +50,21 @@ export class Sequencer {
   startMelodic(
     pattern: Pattern,
     onStep: StepCallback,
-    triggerNote: (note: number, velocity: number, time: number) => void
+    triggerNote: (note: number, velocity: number, time: number, duration: number) => void,
+    onEnd?: () => void
   ): void {
     this.stop();
     this.currentStep = 0;
 
-    const steps = Array.from({ length: pattern.steps }, (_, i) => i);
+    // Use the actual content length, not the default pattern.steps.
+    // Round up to nearest 16 so the loop boundary is always bar-aligned.
+    const maxStep = pattern.notes.reduce(
+      (m, n) => Math.max(m, n.startStep + n.duration),
+      pattern.steps
+    );
+    const loopLen = Math.ceil(maxStep / 16) * 16;
+
+    const steps = Array.from({ length: loopLen }, (_, i) => i);
 
     this.sequence = new Tone.Sequence(
       (time: number, step: unknown) => {
@@ -56,11 +72,15 @@ export class Sequencer {
         this.currentStep = s;
         onStep(s, time);
 
-        // Find notes that start at this step
         const notesAtStep = pattern.notes.filter(n => n.startStep === s);
         notesAtStep.forEach(note => {
-          triggerNote(note.pitch, note.velocity, time);
+          triggerNote(note.pitch, note.velocity, time, note.duration);
         });
+
+        // Fire onEnd when we reach the last step
+        if (onEnd && s === loopLen - 1) {
+          setTimeout(onEnd, 0);
+        }
       },
       steps,
       '16n'

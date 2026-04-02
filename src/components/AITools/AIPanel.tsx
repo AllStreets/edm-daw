@@ -426,7 +426,7 @@ export function AIPanel() {
   const {
     project, selectedTrackId,
     updateSynthSettings, toggleStep,
-    addNote, setBPM, play, stop, isPlaying, launchScene,
+    addNote, setBPM, stop, isPlaying, launchScene,
     assignClipToScene, addNamedScene, addPatternToTrack, removeScene,
   } = useProjectStore();
 
@@ -607,11 +607,9 @@ export function AIPanel() {
       }
 
       // For each section: create a scene + patterns per track
-      let firstSceneId: string | null = null;
       for (let i = 0; i < sections.length; i++) {
         const { name, patterns } = sections[i];
         const sceneId = addNamedScene(name);
-        if (i === 0) firstSceneId = sceneId;
 
         const sectionBars = result.plan.sections[i]?.bars ?? 8;
         const loopSteps = sectionBars * 16;
@@ -655,13 +653,76 @@ export function AIPanel() {
         }
       }
 
-      setSongResult(result);
-      setActivePanel('session');
-      setBottomPanelTab('sequencer');
-      if (firstSceneId) {
-        launchScene(firstSceneId);
-      } else {
-        void play();
+      // Build a "Full Song" scene with all sections concatenated into single patterns
+      {
+        const fullLeadNotes: import('../../types').Note[] = [];
+        const fullBassNotes: import('../../types').Note[] = [];
+        const fullPadNotes: import('../../types').Note[] = [];
+        // 16 drum rows
+        const fullDrumData: boolean[][] = Array.from({ length: 16 }, () => []);
+        let cumSteps = 0;
+
+        for (let i = 0; i < sections.length; i++) {
+          const { patterns } = sections[i];
+          const sectionBars = result.plan.sections[i]?.bars ?? 8;
+          const loopSteps = sectionBars * 16;
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const offsetNotes = (notes: any[]) =>
+            notes.map(n => ({ ...n, id: crypto.randomUUID(), startStep: (n.startStep ?? 0) + cumSteps })) as import('../../types').Note[];
+
+          fullLeadNotes.push(...offsetNotes(patterns.lead.notes));
+          fullBassNotes.push(...offsetNotes(patterns.bass.notes));
+          fullPadNotes.push(...offsetNotes(patterns.pad.notes));
+
+          const d = patterns.drums;
+          const drumRows = [
+            d.kick, d.snare, d.clap, d.hihat,
+            d.openHihat, d.tom, d.rim, d.cymbal,
+            d.kick2, d.snare2, d.crash, d.ride,
+            d.tomHi, d.tomLo, d.impact, d.reverseSweep,
+          ];
+          for (let ri = 0; ri < 16; ri++) {
+            const src = drumRows[ri] ?? [];
+            for (let s = 0; s < loopSteps; s++) {
+              fullDrumData[ri].push(src[s % 16] ?? false);
+            }
+          }
+
+          cumSteps += loopSteps;
+        }
+
+        const fullSceneId = addNamedScene('▶ Full Song');
+
+        if (leadTrack && fullLeadNotes.length > 0) {
+          const pat = defaultPattern({ name: 'Full Song Lead', steps: cumSteps, notes: fullLeadNotes });
+          addPatternToTrack(leadTrack.id, pat);
+          assignClipToScene(fullSceneId, leadTrack.id, pat.id);
+        }
+        if (bassTrack && fullBassNotes.length > 0) {
+          const pat = defaultPattern({ name: 'Full Song Bass', steps: cumSteps, notes: fullBassNotes });
+          addPatternToTrack(bassTrack.id, pat);
+          assignClipToScene(fullSceneId, bassTrack.id, pat.id);
+        }
+        if (padTrack && fullPadNotes.length > 0) {
+          const pat = defaultPattern({ name: 'Full Song Pad', steps: cumSteps, notes: fullPadNotes });
+          addPatternToTrack(padTrack.id, pat);
+          assignClipToScene(fullSceneId, padTrack.id, pat.id);
+        }
+        if (drumTrack) {
+          const pat = defaultPattern({ name: 'Full Song Drums', steps: cumSteps, stepData: fullDrumData });
+          addPatternToTrack(drumTrack.id, pat);
+          assignClipToScene(fullSceneId, drumTrack.id, pat.id);
+        }
+
+        setSongResult(result);
+        setActivePanel('session');
+        setBottomPanelTab('sequencer');
+        // Dispose all accumulated Tone.js audio state so the next song starts clean
+        audioEngine.resetTracks();
+        // Small delay to let state settle before launching
+        await new Promise(r => setTimeout(r, 200));
+        launchScene(fullSceneId, true);
       }
 
     } catch (err) {
@@ -672,7 +733,7 @@ export function AIPanel() {
   }, [apiKey, selectedModel, songPrompt, isPlaying, stop, setBPM,
       project.tracks, project.scenes, updateSynthSettings, addPatternToTrack,
       assignClipToScene, addNamedScene, removeScene,
-      setActivePanel, setBottomPanelTab, play, launchScene]);
+      setActivePanel, setBottomPanelTab, launchScene]);
 
   const handleGenerateChords = useCallback(() => {
     const chords = generateChordProgression();
@@ -865,6 +926,12 @@ export function AIPanel() {
               <textarea
                 value={songPrompt}
                 onChange={(e) => setSongPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void handleGenerateSong();
+                  }
+                }}
                 placeholder="dark dubstep banger with heavy bass drops and aggressive synths..."
                 rows={3}
                 className="w-full rounded p-2 text-[11px] font-mono outline-none resize-none"

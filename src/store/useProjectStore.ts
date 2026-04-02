@@ -151,7 +151,7 @@ interface ProjectState {
   removeScene: (id: string) => void;
   updateScene: (id: string, changes: Partial<Scene>) => void;
   assignClipToScene: (sceneId: string, trackId: string, clipId: string | null) => void;
-  launchScene: (sceneId: string) => void;
+  launchScene: (sceneId: string, once?: boolean) => void;
   reorderScenes: (fromIndex: number, toIndex: number) => void;
 
   updateSynthSettings: (trackId: string, settings: SynthSettings) => void;
@@ -312,17 +312,21 @@ export const useProjectStore = create<ProjectState>()(
     },
 
     startRecording() {
-      audioEngine.startRecording();
-      set(draft => { draft.isRecording = true; });
+      audioEngine.startRecording().then(() => {
+        set(draft => { draft.isRecording = true; });
+      }).catch(e => console.error('startRecording failed:', e));
     },
 
     stopRecording() {
       set(draft => { draft.isRecording = false; });
       audioEngine.stopRecording().then(blob => {
+        const ext = blob.type.includes('mp4') ? 'm4a'
+                  : blob.type.includes('ogg') ? 'ogg'
+                  : 'webm';
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `recording-${Date.now()}.mp3`;
+        a.download = `recording-${Date.now()}.${ext}`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -557,13 +561,17 @@ export const useProjectStore = create<ProjectState>()(
       });
     },
 
-    launchScene(sceneId) {
+    launchScene(sceneId, once = false) {
       const { project } = get();
       const scene = project.scenes.find(s => s.id === sceneId);
       if (!scene) return;
       // Stop current audio, set active scene, then start playback with that scene's clips
       get().stop();
       set(draft => { draft.activeSceneId = sceneId; });
+      if (once) {
+        // Set end callback BEFORE play so it's ready when sequencers are created
+        audioEngine.setOnSongEnd(() => get().stop());
+      }
       void get().play();
     },
 

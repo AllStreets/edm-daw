@@ -3,37 +3,38 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { useAnimationFrame } from '../../hooks/useAnimationFrame';
 import { ChannelStrip } from './ChannelStrip';
 import { StereoLevelMeter } from '../Meters/LevelMeter';
+import { audioEngine } from '../../engine/AudioEngine';
 
 // Master channel strip
 function MasterStrip() {
-  const { project } = useProjectStore();
+  const { project, setMasterVolume } = useProjectStore();
   const [masterLevel, setMasterLevel] = useState(0);
   const [isOverloading, setIsOverloading] = useState(false);
   const overloadTimerRef = useRef(0);
 
   const animateMaster = useCallback((_dt: number, timestamp: number) => {
-    const base = project.masterVolume * 0.8;
-    const variation = Math.sin(timestamp * 0.002) * 0.15;
-    const level = Math.max(0, Math.min(1, base + variation + (Math.random() - 0.5) * 0.05));
+    // Use real waveform data for master level metering
+    const waveData = audioEngine.getWaveformData();
+    let sum = 0;
+    for (let i = 0; i < waveData.length; i++) sum += waveData[i] * waveData[i];
+    const rms = Math.sqrt(sum / waveData.length);
+    const level = Math.min(1, rms * 4);
     setMasterLevel(level);
 
-    if (level > 0.95) {
+    if (level > 0.93) {
       setIsOverloading(true);
       overloadTimerRef.current = timestamp + 1500;
     } else if (timestamp > overloadTimerRef.current) {
       setIsOverloading(false);
     }
-  }, [project.masterVolume]);
+  }, []);
 
   useAnimationFrame(animateMaster, true);
 
   const handleMasterVolume = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    // Master volume stored directly on project; use first track as proxy for now
     const val = parseFloat(e.target.value);
-    // We don't have a direct setMasterVolume in the store interface specified,
-    // so we just update the local display
-    console.log('Master volume:', val);
-  }, []);
+    setMasterVolume(val);
+  }, [setMasterVolume]);
 
   const faderPos = 1 - project.masterVolume;
 
@@ -144,8 +145,19 @@ function MasterStrip() {
   );
 }
 
-// Send/Return channel
-function SendReturnStrip({ name, color }: { name: string; color: string }) {
+// Send/Return channel — reads real level from audio engine
+function SendReturnStrip({ name, color, effectKey }: { name: string; color: string; effectKey: 'reverb' | 'delay' }) {
+  const [level, setLevel] = useState(0);
+
+  const animate = useCallback((_dt: number) => {
+    const rms = audioEngine.getEffectLevel(effectKey);
+    setLevel(Math.min(1, rms * 5));
+  }, [effectKey]);
+
+  useAnimationFrame(animate, true);
+
+  const barH = Math.round(level * 80);
+
   return (
     <div
       className="flex flex-col items-center gap-1 py-2 px-1 rounded"
@@ -154,31 +166,25 @@ function SendReturnStrip({ name, color }: { name: string; color: string }) {
         minHeight: '100%',
         background: 'linear-gradient(180deg, #111118 0%, #0c0c12 100%)',
         border: '1px solid #1a1a28',
-        opacity: 0.85,
       }}
     >
-      <div
-        className="w-full rounded-sm"
-        style={{ height: 2, background: color, boxShadow: `0 0 4px ${color}88` }}
-      />
+      <div className="w-full rounded-sm" style={{ height: 2, background: color, boxShadow: `0 0 4px ${color}88` }} />
       <div className="text-[8px] font-mono text-center" style={{ color }}>{name}</div>
 
-      {/* Simple level display */}
+      {/* Real level meters */}
       <div className="flex gap-0.5 mt-auto">
-        {['L', 'R'].map((ch) => (
+        {[1, 0.92].map((scale, i) => (
           <div
-            key={ch}
-            className="rounded-sm overflow-hidden"
+            key={i}
+            className="relative rounded-sm overflow-hidden"
             style={{ width: 8, height: 80, background: '#0a0a0a', border: '1px solid #1a1a2a' }}
           >
             <div
-              className="w-full rounded-sm"
+              className="absolute bottom-0 left-0 right-0 rounded-sm transition-none"
               style={{
-                height: '40%',
-                background: `linear-gradient(to top, ${color}88, ${color}22)`,
-                marginTop: 'auto',
-                position: 'relative',
-                top: '60%',
+                height: barH * scale,
+                background: `linear-gradient(to top, ${color}, ${color}66)`,
+                boxShadow: barH > 10 ? `0 0 4px ${color}88` : 'none',
               }}
             />
           </div>
@@ -267,8 +273,8 @@ export function Mixer() {
           {/* Send/Return strips */}
           {showSendReturns && (
             <>
-              <SendReturnStrip name="REVERB" color="#9945ff" />
-              <SendReturnStrip name="DELAY" color="#00d4ff" />
+              <SendReturnStrip name="REVERB" color="#9945ff" effectKey="reverb" />
+              <SendReturnStrip name="DELAY" color="#00d4ff" effectKey="delay" />
             </>
           )}
 

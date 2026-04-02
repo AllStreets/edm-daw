@@ -29,9 +29,9 @@ class AudioEngine {
 
   private tracks: Map<string, TrackAudio> = new Map();
   private initialized = false;
-  private mediaRecorder: MediaRecorder | null = null;
-  private recordingChunks: Blob[] = [];
-  private streamDestination: MediaStreamAudioDestinationNode | null = null;
+  private recorder: Tone.Recorder | null = null;
+  private onSongEnd: (() => void) | null = null;
+  private songEndFired = false;
 
   constructor() {
     // Only create simple gain/analysis nodes in the constructor.
@@ -81,6 +81,9 @@ class AudioEngine {
   async start(): Promise<void> {
     await Tone.start();
     this.initialize();
+    // Small lookahead gives scheduler breathing room without pre-committing too many notes
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (Tone.getTransport() as any).lookAhead = 0.15;
   }
 
   setBPM(bpm: number): void {
@@ -97,7 +100,46 @@ class AudioEngine {
 
   stop(): void {
     Tone.getTransport().stop();
+    Tone.getTransport().cancel(0); // purge all pending scheduled events
     Tone.getTransport().position = '0:0:0';
+    this.onSongEnd = null;
+    this.songEndFired = false;
+  }
+
+  /**
+   * Dispose all per-track synth chains, drum machines, and sequencers so that
+   * the next call to play() rebuilds them from scratch. The gain/panner/send
+   * routing stays intact. Call this before each new song generation to prevent
+   * accumulated Tone.js internal state from causing audio degradation.
+   */
+  resetTracks(): void {
+    for (const track of this.tracks.values()) {
+      if (track.synthChain) {
+        track.synthChain.dispose();
+        delete track.synthChain;
+      }
+      if (track.drumMachine) {
+        track.drumMachine.dispose();
+        delete track.drumMachine;
+      }
+      if (track.sequencer) {
+        track.sequencer.dispose();
+        delete track.sequencer;
+      }
+    }
+  }
+
+  /** Call with a callback to stop playback after one full pass; call with null to loop. */
+  setOnSongEnd(cb: (() => void) | null): void {
+    this.onSongEnd = cb;
+    this.songEndFired = false;
+  }
+
+  private fireSongEnd(): void {
+    if (!this.songEndFired && this.onSongEnd) {
+      this.songEndFired = true;
+      this.onSongEnd();
+    }
   }
 
   pause(): void {
@@ -221,7 +263,7 @@ class AudioEngine {
       track.drumMachine.createDrumVoices(track.gain);
     }
     if (!track.sequencer) track.sequencer = new Sequencer();
-    track.sequencer.start(pattern, onStep, track.drumMachine);
+    track.sequencer.start(pattern, onStep, track.drumMachine, () => this.fireSongEnd());
   }
 
   stopDrumSequencer(trackId: string): void {
@@ -241,7 +283,7 @@ class AudioEngine {
         const noteSec = Math.max(stepSec * 0.5, stepSec * duration * 0.95);
         synth.triggerAttackRelease(noteName, noteSec, time, velocity / 127);
       }
-    });
+    }, () => this.fireSongEnd());
   }
 
   stopMelodicSequencer(trackId: string): void {
@@ -249,42 +291,28 @@ class AudioEngine {
     if (track?.sequencer) track.sequencer.stop();
   }
 
-  startRecording(): void {
+  async startRecording(): Promise<void> {
+    await Tone.start();
     this.initialize();
-    const rawCtx = Tone.getContext().rawContext as AudioContext;
-    this.streamDestination = rawCtx.createMediaStreamDestination();
-    this.masterLimiter.connect(this.streamDestination as unknown as Tone.ToneAudioNode);
-    this.recordingChunks = [];
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-      ? 'audio/webm;codecs=opus'
-      : 'audio/webm';
-    this.mediaRecorder = new MediaRecorder(this.streamDestination.stream, { mimeType });
-    this.mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) this.recordingChunks.push(e.data);
-    };
-    this.mediaRecorder.start(100);
+    if (this.recorder) {
+      try { await this.recorder.stop(); } catch { /* ignore */ }
+      this.recorder.dispose();
+      this.recorder = null;
+    }
+    this.recorder = new Tone.Recorder();
+    this.masterLimiter.connect(this.recorder);
+    await this.recorder.start();
   }
 
-  stopRecording(): Promise<Blob> {
-    return new Promise(resolve => {
-      if (!this.mediaRecorder) {
-        resolve(new Blob([], { type: 'audio/webm' }));
-        return;
-      }
-      this.mediaRecorder.onstop = () => {
-        const blob = new Blob(this.recordingChunks, { type: 'audio/webm' });
-        this.recordingChunks = [];
-        if (this.streamDestination) {
-          try {
-            this.masterLimiter.disconnect(this.streamDestination as unknown as Tone.ToneAudioNode);
-          } catch { /* already disconnected */ }
-          this.streamDestination = null;
-        }
-        this.mediaRecorder = null;
-        resolve(blob);
-      };
-      this.mediaRecorder.stop();
-    });
+  async stopRecording(): Promise<Blob> {
+    if (!this.recorder) {
+      return new Blob([], { type: 'audio/webm' });
+    }
+    const blob = await this.recorder.stop();
+    try { this.masterLimiter.disconnect(this.recorder); } catch { /* ignore */ }
+    this.recorder.dispose();
+    this.recorder = null;
+    return blob;
   }
 
   triggerNote(trackId: string, note: string, velocity: number, duration: string): void {

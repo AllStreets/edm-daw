@@ -1,6 +1,26 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 
+// ─── Rate-limit retry ───────────────────────────────────────────────────────
+
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Promise<T> {
+  let delay = 10_000; // start at 10 s
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      const status = (err as { status?: number })?.status;
+      if (status === 429 && attempt < maxAttempts) {
+        await new Promise(res => setTimeout(res, delay));
+        delay = Math.min(delay * 2, 60_000); // cap at 60 s
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('Max retry attempts reached');
+}
+
 // ─── Schema ────────────────────────────────────────────────────────────────────
 
 const NoteSchema = z.object({
@@ -180,12 +200,12 @@ export async function generateSong(
   onProgress('Sending request to Claude...', false);
 
   // Non-streaming for reliability — no risk of accumulation bugs
-  const message = await client.messages.create({
+  const message = await withRetry(() => client.messages.create({
     model,
     max_tokens: 4096,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: buildPrompt(description) }],
-  });
+  }));
 
   const rawText = message.content
     .filter((c): c is Anthropic.TextBlock => c.type === 'text')
@@ -372,6 +392,7 @@ function coerceTrackV2(
   raw: unknown,
   pitchMin: number,
   pitchMax: number,
+  maxSteps?: number,
 ): { oscType: 'sawtooth' | 'square' | 'sine' | 'triangle'; notes: Array<{ pitch: number; startStep: number; duration: number; velocity: number }> } | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
@@ -380,13 +401,19 @@ function coerceTrackV2(
   if (!Array.isArray(r.notes)) return null;
   const notes = (r.notes as Array<Record<string, unknown>>)
     .filter(n => typeof n === 'object' && n !== null)
-    .map(n => ({
-      pitch: Math.max(pitchMin, Math.min(pitchMax, Math.round(Number(n.pitch ?? 60)))),
-      startStep: Math.max(0, Math.round(Number(n.startStep ?? 0))),
-      duration: Math.max(1, Math.round(Number(n.duration ?? 1))),
-      velocity: Math.max(1, Math.min(127, Math.round(Number(n.velocity ?? 80)))),
-    }));
-  return { oscType, notes };
+    .map(n => {
+      const startStep = Math.max(0, Math.min(maxSteps != null ? maxSteps - 1 : 32767, Math.round(Number(n.startStep ?? 0))));
+      const rawDur    = Math.max(1, Math.round(Number(n.duration ?? 1)));
+      const duration  = maxSteps != null ? Math.min(rawDur, maxSteps - startStep) : rawDur;
+      return {
+        pitch:     Math.max(pitchMin, Math.min(pitchMax, Math.round(Number(n.pitch ?? 60)))),
+        startStep,
+        duration:  Math.max(1, duration),
+        velocity:  Math.max(1, Math.min(127, Math.round(Number(n.velocity ?? 80)))),
+      };
+    });
+  // Remove overlapping notes — same fix V1 applies
+  return { oscType, notes: deoverlapNotes(notes) };
 }
 
 // ─── Vibe detection ────────────────────────────────────────────────────────
@@ -433,15 +460,17 @@ Return this exact JSON:
   "scale": <"major"|"minor"|"dorian"|"phrygian"|"mixolydian">,
   "vibe": "${vibe}",
   "sections": [
-    { "name": <section name>, "bars": <4|8|16>, "energy": <"low"|"medium"|"high"|"peak"|"rising"|"fading"> }
+    { "name": <section name>, "bars": <8|16>, "energy": <"low"|"medium"|"high"|"peak"|"rising"|"fading"> }
   ]
 }
 
 Rules:
-- 4–8 sections total
-- Simple prompts: 4–5 sections. Complex/full-track prompts: 6–8 sections
+- 6–10 sections total. Never fewer than 6.
+- Simple/short prompts: 6–7 sections. Complex/full-track prompts: 8–10 sections.
 - Valid section names: Intro, Build, Build 1, Build 2, Drop, Drop 1, Drop 2, Breakdown, Riser, Bridge, Outro, Hook, Verse, Chorus, Pre-Drop, Interlude
+- bars MUST be 8 or 16 — never 4, never 32. Short transitions (Riser, Pre-Drop) = 8 bars. Drops and Breakdowns = 16 bars. Intro/Outro = 8 or 16.
 - energy "low" = sparse/intro/breakdown, "medium" = building, "high"/"peak" = full drops, "rising" = riser tension, "fading" = outro
+- TARGET DURATION: aim for total song length 90–240 seconds. At bpm X: each bar ≈ ${240}/X seconds. Sum all section bars and multiply to verify duration >= 90s.
 - For aggressive vibe: include Impact/Drop moments; for calm: fewer sections, longer bars`;
 }
 
@@ -452,9 +481,9 @@ const SongPlanSchema = z.object({
   vibe: z.enum(['aggressive','calm','happy','dark','neutral']),
   sections: z.array(z.object({
     name: z.string().min(1),
-    bars: z.number().int().min(2).max(32),
+    bars: z.number().int().min(8).max(16).transform(b => (b < 8 ? 8 : b > 16 ? 16 : b)),
     energy: z.enum(['low','medium','high','peak','rising','fading']),
-  })).min(2).max(10),
+  })).min(6).max(12),
 });
 
 export async function planSong(
@@ -467,11 +496,11 @@ export async function planSong(
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
   onProgress('Planning song structure...');
 
-  const message = await client.messages.create({
+  const message = await withRetry(() => client.messages.create({
     model,
     max_tokens: 1024,
     messages: [{ role: 'user', content: buildPlannerPrompt(description, vibe) }],
-  });
+  }));
 
   const rawText = message.content
     .filter((c): c is Anthropic.TextBlock => c.type === 'text')
@@ -494,10 +523,18 @@ export async function planSong(
       sections: Array.isArray(p.sections) && (p.sections as unknown[]).length > 0
         ? (p.sections as Array<Record<string,unknown>>).map(s => ({
             name: String(s.name ?? 'Section'),
-            bars: Math.max(2, Math.min(32, Math.round(Number(s.bars ?? 8)))),
+            bars: Math.max(8, Math.min(16, Math.round(Number(s.bars ?? 8)))),
             energy: (['low','medium','high','peak','rising','fading'].includes(s.energy as string) ? s.energy : 'medium') as SongSection['energy'],
           }))
-        : [{ name: 'Intro', bars: 8, energy: 'low' as const }, { name: 'Drop', bars: 8, energy: 'high' as const }, { name: 'Outro', bars: 8, energy: 'fading' as const }],
+        : [
+            { name: 'Intro',      bars: 8,  energy: 'low'    as const },
+            { name: 'Build 1',    bars: 8,  energy: 'medium' as const },
+            { name: 'Drop 1',     bars: 16, energy: 'peak'   as const },
+            { name: 'Breakdown',  bars: 8,  energy: 'low'    as const },
+            { name: 'Build 2',    bars: 8,  energy: 'rising' as const },
+            { name: 'Drop 2',     bars: 16, energy: 'peak'   as const },
+            { name: 'Outro',      bars: 8,  energy: 'fading' as const },
+          ],
     };
   }
   return result.data;
@@ -568,7 +605,10 @@ Output this exact JSON:
 }
 
 Rules: No note overlaps. Notes sorted by startStep. note[i].startStep + note[i].duration <= note[i+1].startStep.
-Generate at least: low=4 notes, medium=8 notes, high=14 notes, peak=16 notes for lead.`;
+Minimum note counts by energy:
+- lead:  low=4  medium=8  high=14 peak=16
+- bass:  low=4  medium=8  high=12 peak=16  (bass MUST be rhythmically active — never fewer than 4 notes)
+- pad:   low=2  medium=4  high=6  peak=8   (pad notes MUST have duration >= 8 steps for atmospheric sustain)`;
 }
 
 export async function composeSection(
@@ -581,11 +621,11 @@ export async function composeSection(
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
   onProgress(`Composing ${section.name}...`);
 
-  const message = await client.messages.create({
+  const message = await withRetry(() => client.messages.create({
     model,
     max_tokens: 4096,
     messages: [{ role: 'user', content: buildComposerPrompt(plan, section) }],
-  });
+  }));
 
   const rawText = message.content
     .filter((c): c is Anthropic.TextBlock => c.type === 'text')
@@ -608,17 +648,40 @@ export async function composeSection(
     return normalizeDrumRow(row);
   };
 
-  const leadTrack = coerceTrackV2(parsed.lead, 60, 84);
-  const bassTrack = coerceTrackV2(parsed.bass, 36, 55);
-  const padTrack  = coerceTrackV2(parsed.pad,  52, 76);
+  const sectionSteps = section.bars * 16;
+  const leadTrack = coerceTrackV2(parsed.lead, 60, 84, sectionSteps);
+  const bassTrack = coerceTrackV2(parsed.bass, 36, 55, sectionSteps);
+  const padTrack  = coerceTrackV2(parsed.pad,  52, 76, sectionSteps);
 
   return {
     leadPreset: VALID_PRESETS_LEAD.includes(parsed.leadPreset as string) ? (parsed.leadPreset as string) : VALID_PRESETS_LEAD[0],
     bassPreset: VALID_PRESETS_BASS.includes(parsed.bassPreset as string) ? (parsed.bassPreset as string) : VALID_PRESETS_BASS[0],
     padPreset:  VALID_PRESETS_PAD.includes(parsed.padPreset  as string)  ? (parsed.padPreset  as string) : VALID_PRESETS_PAD[0],
-    lead: leadTrack ?? { oscType: 'sawtooth', notes: [{ pitch: 72, startStep: 0, duration: 2, velocity: 90 }] },
-    bass: bassTrack ?? { oscType: 'sawtooth', notes: [{ pitch: 48, startStep: 0, duration: 2, velocity: 100 }] },
-    pad:  padTrack  ?? { oscType: 'triangle', notes: [{ pitch: 60, startStep: 0, duration: 8, velocity: 70 }] },
+    lead: (leadTrack && leadTrack.notes.length >= 1) ? leadTrack : {
+      oscType: 'sawtooth',
+      notes: [
+        { pitch: 72, startStep: 0, duration: 2, velocity: 90 },
+        { pitch: 74, startStep: 4, duration: 2, velocity: 80 },
+        { pitch: 76, startStep: 8, duration: 2, velocity: 85 },
+        { pitch: 72, startStep: 12, duration: 4, velocity: 88 },
+      ],
+    },
+    bass: (bassTrack && bassTrack.notes.length >= 2) ? bassTrack : {
+      oscType: 'sawtooth',
+      notes: [
+        { pitch: 48, startStep: 0,  duration: 2, velocity: 100 },
+        { pitch: 48, startStep: 4,  duration: 2, velocity: 90  },
+        { pitch: 43, startStep: 8,  duration: 2, velocity: 95  },
+        { pitch: 45, startStep: 12, duration: 4, velocity: 92  },
+      ],
+    },
+    pad: (padTrack && padTrack.notes.length >= 1) ? padTrack : {
+      oscType: 'triangle',
+      notes: [
+        { pitch: 60, startStep: 0,  duration: 8, velocity: 65 },
+        { pitch: 64, startStep: 8,  duration: 8, velocity: 60 },
+      ],
+    },
     drums: {
       kick:         coerceDrum16('kick'),
       snare:        coerceDrum16('snare'),

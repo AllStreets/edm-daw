@@ -1,4 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { audioEngine } from '../../engine/AudioEngine';
+import * as Tone from 'tone';
 import type {
   SynthSettings,
   SubOscSettings,
@@ -321,6 +323,121 @@ function SectionLabel({ label, color }: { label: string; color: string }) {
   );
 }
 
+// ─── Mini piano keyboard ───────────────────────────────────────────────────────
+const NOTES_IN_OCTAVE = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const WHITE_KEYS = [0,2,4,5,7,9,11]; // C D E F G A B semitone offsets
+const BLACK_KEYS = [1,3,6,8,10];     // C# D# F# G# A#
+
+function SynthPiano({ trackId }: { trackId: string }) {
+  const OCTAVES = [3, 4, 5];
+  const KEY_W = 18;
+  const KEY_H = 70;
+  const BK_W = 12;
+  const BK_H = 44;
+  const [activeKey, setActiveKey] = useState<number | null>(null);
+
+  const triggerNote = useCallback((midi: number) => {
+    setActiveKey(midi);
+    audioEngine.start().then(() => {
+      audioEngine.triggerNote(trackId, Tone.Frequency(midi, 'midi').toNote(), 0.8, '8n');
+    });
+    setTimeout(() => setActiveKey(null), 250);
+  }, [trackId]);
+
+  const whiteKeys: { midi: number; label: string; octave: number }[] = [];
+  OCTAVES.forEach(oct => {
+    WHITE_KEYS.forEach(offset => {
+      const midi = (oct + 1) * 12 + offset;
+      whiteKeys.push({ midi, label: NOTES_IN_OCTAVE[offset] + oct, octave: oct });
+    });
+  });
+
+  const totalW = whiteKeys.length * KEY_W;
+
+  return (
+    <div style={{
+      padding: '8px 12px',
+      borderTop: '1px solid #1a1a2e',
+      background: '#07070f',
+      borderRadius: '0 0 12px 12px',
+      overflowX: 'auto',
+    }}>
+      <div style={{ fontSize: 8, color: '#303050', letterSpacing: 1, marginBottom: 6, textTransform: 'uppercase' }}>
+        Preview Keyboard
+      </div>
+      <div style={{ position: 'relative', height: KEY_H, width: totalW, margin: '0 auto' }}>
+        {/* White keys */}
+        {whiteKeys.map(({ midi, label }) => {
+          const idx = whiteKeys.findIndex(k => k.midi === midi);
+          const x = idx * KEY_W;
+          const isActive = activeKey === midi;
+          return (
+            <div
+              key={midi}
+              onMouseDown={() => triggerNote(midi)}
+              title={label}
+              style={{
+                position: 'absolute',
+                left: x,
+                top: 0,
+                width: KEY_W - 1,
+                height: KEY_H,
+                background: isActive ? '#d0a0ff' : '#e8e8f0',
+                border: '1px solid #999',
+                borderRadius: '0 0 4px 4px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'flex-end',
+                justifyContent: 'center',
+                paddingBottom: 3,
+                userSelect: 'none',
+                boxShadow: isActive ? '0 0 8px #9945ff' : 'none',
+                zIndex: 1,
+              }}
+            >
+              {label.startsWith('C') && !label.startsWith('C#') && (
+                <span style={{ fontSize: 7, color: '#666', fontWeight: 600 }}>{label}</span>
+              )}
+            </div>
+          );
+        })}
+        {/* Black keys */}
+        {OCTAVES.map(oct => {
+          const octaveStartIdx = whiteKeys.findIndex(k => k.octave === oct);
+          return BLACK_KEYS.map(offset => {
+            const midi = (oct + 1) * 12 + offset;
+            // Find x position: black key sits between adjacent white keys
+            const whiteOffset = WHITE_KEYS.findIndex(w => w > offset) - 1;
+            const actualWhiteIdx = octaveStartIdx + (whiteOffset < 0 ? WHITE_KEYS.length - 1 : whiteOffset);
+            const x = actualWhiteIdx * KEY_W + KEY_W - BK_W / 2;
+            const isActive = activeKey === midi;
+            return (
+              <div
+                key={midi}
+                onMouseDown={(e) => { e.stopPropagation(); triggerNote(midi); }}
+                style={{
+                  position: 'absolute',
+                  left: x,
+                  top: 0,
+                  width: BK_W,
+                  height: BK_H,
+                  background: isActive ? '#9945ff' : '#111',
+                  border: '1px solid #000',
+                  borderRadius: '0 0 3px 3px',
+                  cursor: 'pointer',
+                  zIndex: 2,
+                  boxShadow: isActive ? '0 0 8px #9945ff' : '2px 2px 4px rgba(0,0,0,0.8)',
+                  userSelect: 'none',
+                }}
+              />
+            );
+          });
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main SynthEditor ────────────────────────────────────────────────────────
 
 export const SynthEditor: React.FC<SynthEditorProps> = ({ trackId, onClose }) => {
@@ -407,10 +524,9 @@ export const SynthEditor: React.FC<SynthEditorProps> = ({ trackId, onClose }) =>
     >
       <div
         style={{
-          width: 920,
-          maxWidth: '98vw',
-          maxHeight: '96vh',
-          overflowY: 'auto',
+          width: 980,
+          maxWidth: '99vw',
+          height: '97vh',
           background: 'linear-gradient(160deg, #080810 0%, #0b0b18 50%, #080810 100%)',
           border: '1px solid #1e1e38',
           borderRadius: 12,
@@ -553,7 +669,7 @@ export const SynthEditor: React.FC<SynthEditorProps> = ({ trackId, onClose }) =>
         </div>
 
         {/* ── BODY ────────────────────────────────────────────────────── */}
-        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12, flex: 1, overflowY: 'auto', minHeight: 0 }}>
 
           {/* ROW 1: OSC1 | OSC2 | SUB */}
           <div>
@@ -638,6 +754,9 @@ export const SynthEditor: React.FC<SynthEditorProps> = ({ trackId, onClose }) =>
             />
           </div>
         </div>
+
+        {/* ── PIANO KEYBOARD ──────────────────────────────────────────── */}
+        <SynthPiano trackId={trackId} />
 
         {/* ── FOOTER ──────────────────────────────────────────────────── */}
         <div style={{
