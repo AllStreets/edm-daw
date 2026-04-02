@@ -4,17 +4,16 @@ import { DRUM_PRESETS, DRUM_PRESET_NAMES } from '../../data/presets';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const DRUM_NAMES = ['Kick', 'Snare', 'Clap', 'HiHat Cl', 'HiHat Op', 'Tom', 'Rim', 'Cymbal'];
+const DRUM_NAMES = [
+  'Kick', 'Snare', 'Clap', 'HH', 'PHH', 'Tom', 'Rim', 'Cym',
+  'Kick2', 'Sn2', 'Crash', 'Ride', 'TomH', 'TomL', 'Impact', 'Rev',
+];
 
 const DRUM_COLORS = [
-  '#ff0080', // Kick  – hot pink
-  '#9945ff', // Snare – neon purple
-  '#00d4ff', // Clap  – cyan
-  '#ffcc00', // HiHat Cl – yellow
-  '#ff8800', // HiHat Op – orange
-  '#00ff88', // Tom  – green
-  '#ff4488', // Rim  – rose
-  '#cc44ff', // Cymbal – violet
+  '#ff4444', '#ffaa00', '#ffcc00', '#00d4ff',
+  '#00aaff', '#9945ff', '#ff88aa', '#ff6600',
+  '#ff2222', '#ffdd44', '#00ffcc', '#44aaff',
+  '#cc88ff', '#ff66cc', '#ff3300', '#aaffaa',
 ];
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -129,10 +128,10 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
   const [stepCount, setStepCount] = useState<16 | 32>(
     (pattern?.steps as 16 | 32) ?? 16
   );
-  const [velocities, setVelocities] = useState<number[]>(Array(8).fill(100));
+  const [velocities, setVelocities] = useState<number[]>(Array(16).fill(100));
   const [selectedPreset, setSelectedPreset] = useState('');
   // Track which sample name is "loaded" on each drum row (visual only)
-  const [rowSamples, setRowSamples] = useState<(string | null)[]>(Array(8).fill(null));
+  const [rowSamples, setRowSamples] = useState<(string | null)[]>(Array(16).fill(null));
   const [dragOverRow, setDragOverRow] = useState<number | null>(null);
 
   // Selection state
@@ -149,7 +148,17 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
     );
   }
 
-  const stepData: boolean[][] = pattern.stepData ?? Array.from({ length: 8 }, () => Array(32).fill(false));
+  const stepData: boolean[][] = pattern.stepData ?? Array.from({ length: 16 }, () => Array(32).fill(false));
+
+  // Pad stepData to always have 16 rows (non-destructive — local variable only)
+  const paddedStepData: boolean[][] = stepData.length >= 16
+    ? stepData
+    : [
+        ...stepData,
+        ...Array.from({ length: 16 - stepData.length }, () =>
+          Array(pattern.steps).fill(false)
+        ),
+      ];
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -269,7 +278,7 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
         const items: Array<{ row: number; stepOffset: number; on: boolean }> = [];
         for (let r = selRect.rowMin; r <= selRect.rowMax; r++) {
           for (let s = selRect.stepMin; s <= selRect.stepMax; s++) {
-            items.push({ row: r - selRect.rowMin, stepOffset: s - selRect.stepMin, on: stepData[r]?.[s] ?? false });
+            items.push({ row: r - selRect.rowMin, stepOffset: s - selRect.stepMin, on: paddedStepData[r]?.[s] ?? false });
           }
         }
         stepClipboard.current = items;
@@ -282,8 +291,8 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
         stepClipboard.current.forEach(({ row, stepOffset, on }) => {
           const targetStep = pasteCol + stepOffset;
           const targetRow = row;
-          if (targetStep < stepCount && targetRow < 8) {
-            const current = stepData[targetRow]?.[targetStep] ?? false;
+          if (targetStep < stepCount && targetRow < 16) {
+            const current = paddedStepData[targetRow]?.[targetStep] ?? false;
             if (current !== on) toggleStep(trackId, patternId, targetRow, targetStep);
           }
         });
@@ -310,7 +319,7 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
   };
 
   const renderStepButton = (row: number, step: number) => {
-    const isOn = stepData[row]?.[step] ?? false;
+    const isOn = paddedStepData[row]?.[step] ?? false;
     const isCurrent = currentStep === step;
     const groupIndex = Math.floor(step / 4);
     const isEvenGroup = groupIndex % 2 === 0;
