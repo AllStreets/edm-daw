@@ -68,6 +68,7 @@ interface PianoRollProps {
   trackId: string;
   patternId: string;
   onClose: () => void;
+  embedded?: boolean;
 }
 
 // ─── Context menu ─────────────────────────────────────────────────────────────
@@ -80,8 +81,8 @@ interface ContextMenuState {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClose }) => {
-  const { project, addNote, removeNote, updateNote } = useProjectStore();
+export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClose, embedded = false }) => {
+  const { project, addNote, removeNote, updateNote, currentStep } = useProjectStore();
 
   const track = project.tracks.find(t => t.id === trackId);
   const pattern = track?.patterns.find(p => p.id === patternId);
@@ -121,6 +122,7 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
   const rowHeight = SEMITONE_HEIGHT * vZoom;
   const gridWidth = (pattern?.steps ?? 16) * STEPS_PER_BAR * stepWidth;
   const gridHeight = TOTAL_SEMITONES * rowHeight;
+  const playheadX = currentStep * stepWidth;
 
   // Scroll to middle C on mount
   useEffect(() => {
@@ -564,7 +566,13 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#080810]" style={{ fontFamily: 'monospace' }}>
+    <div
+      style={{
+        ...(embedded
+          ? { height: '100%', display: 'flex', flexDirection: 'column', background: '#080810', fontFamily: 'monospace' }
+          : { position: 'fixed', inset: 0, zIndex: 50, display: 'flex', flexDirection: 'column', background: '#080810', fontFamily: 'monospace' }),
+      }}
+    >
       {/* ── Header ── */}
       <div className="flex items-center gap-3 px-4 py-2 bg-[#0d0d1a] border-b border-[#2a2a3e] flex-shrink-0 flex-wrap">
         {/* Track + pattern name */}
@@ -720,6 +728,16 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
             >
               <svg width={gridWidth} height={28}>
                 {renderRuler()}
+                <line
+                  x1={playheadX}
+                  y1={0}
+                  x2={playheadX}
+                  y2={28}
+                  stroke="white"
+                  strokeWidth={1.5}
+                  opacity={0.85}
+                  style={{ pointerEvents: 'none' }}
+                />
               </svg>
             </div>
           </div>
@@ -746,6 +764,17 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
               >
                 {renderGridLines()}
                 {renderNotes()}
+                {/* Playhead */}
+                <line
+                  x1={playheadX}
+                  y1={0}
+                  x2={playheadX}
+                  y2={gridHeight}
+                  stroke="white"
+                  strokeWidth={1.5}
+                  opacity={0.85}
+                  style={{ pointerEvents: 'none' }}
+                />
               </svg>
 
               {/* Velocity lane */}

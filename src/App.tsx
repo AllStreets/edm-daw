@@ -152,11 +152,70 @@ function BottomTabBar({
   const { project, selectedTrackId } = useProjectStore();
   const selectedTrack = project.tracks.find(t => t.id === selectedTrackId);
 
-  const tabs: { id: BottomTab; label: string; icon: string }[] = [
-    { id: 'sequencer', label: 'STEP SEQ', icon: '⊞' },
-    { id: 'piano-roll', label: 'PIANO ROLL', icon: '🎹' },
-    { id: 'ai', label: 'AI TOOLS', icon: '⚡' },
-    { id: 'visualizer', label: 'VISUALIZER', icon: '◉' },
+  // SVG icons — no emojis
+  const TabIcon = ({ id }: { id: BottomTab }) => {
+    if (id === 'sequencer') return (
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+        <rect x="0" y="0" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="3.2" y="0" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="6.4" y="0" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="9.5" y="0" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="0" y="3.2" width="2.5" height="2.5" rx="0.4" opacity="0.5"/>
+        <rect x="3.2" y="3.2" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="6.4" y="3.2" width="2.5" height="2.5" rx="0.4" opacity="0.5"/>
+        <rect x="9.5" y="3.2" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="0" y="6.4" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="3.2" y="6.4" width="2.5" height="2.5" rx="0.4" opacity="0.5"/>
+        <rect x="6.4" y="6.4" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="9.5" y="6.4" width="2.5" height="2.5" rx="0.4" opacity="0.5"/>
+        <rect x="0" y="9.5" width="2.5" height="2.5" rx="0.4" opacity="0.5"/>
+        <rect x="3.2" y="9.5" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="6.4" y="9.5" width="2.5" height="2.5" rx="0.4" opacity="0.5"/>
+        <rect x="9.5" y="9.5" width="2.5" height="2.5" rx="0.4"/>
+      </svg>
+    );
+    if (id === 'piano-roll') return (
+      <svg width="13" height="11" viewBox="0 0 13 11" fill="currentColor">
+        {/* White keys */}
+        {[0,1.9,3.8,5.7,7.6,9.5,11.4].map((x, i) => (
+          <rect key={i} x={x} y="0" width="1.7" height="11" rx="0.3" opacity="0.9"/>
+        ))}
+        {/* Black keys */}
+        {[1.1,3,6.8,8.7,10.6].map((x, i) => (
+          <rect key={i} x={x} y="0" width="1.2" height="6.5" rx="0.2" fill="currentColor" opacity="0.25"/>
+        ))}
+      </svg>
+    );
+    if (id === 'ai') return (
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+        <circle cx="6" cy="6" r="2.2"/>
+        <line x1="6" y1="0.5" x2="6" y2="2.8"/>
+        <line x1="6" y1="9.2" x2="6" y2="11.5"/>
+        <line x1="0.5" y1="6" x2="2.8" y2="6"/>
+        <line x1="9.2" y1="6" x2="11.5" y2="6"/>
+        <line x1="1.9" y1="1.9" x2="3.5" y2="3.5"/>
+        <line x1="8.5" y1="8.5" x2="10.1" y2="10.1"/>
+        <line x1="10.1" y1="1.9" x2="8.5" y2="3.5"/>
+        <line x1="3.5" y1="8.5" x2="1.9" y2="10.1"/>
+      </svg>
+    );
+    if (id === 'visualizer') return (
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+        <rect x="0" y="7" width="2" height="5" rx="0.5"/>
+        <rect x="2.5" y="4" width="2" height="8" rx="0.5"/>
+        <rect x="5" y="1" width="2" height="11" rx="0.5"/>
+        <rect x="7.5" y="3" width="2" height="9" rx="0.5"/>
+        <rect x="10" y="5" width="2" height="7" rx="0.5"/>
+      </svg>
+    );
+    return null;
+  };
+
+  const tabs: { id: BottomTab; label: string }[] = [
+    { id: 'sequencer', label: 'STEP SEQ' },
+    { id: 'piano-roll', label: 'PIANO ROLL' },
+    { id: 'ai', label: 'AI TOOLS' },
+    { id: 'visualizer', label: 'VISUALIZER' },
   ];
 
   return (
@@ -194,7 +253,7 @@ function BottomTabBar({
             onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = '#888'; }}
             onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = '#555'; }}
           >
-            <span style={{ fontSize: 12 }}>{tab.icon}</span>
+            <TabIcon id={tab.id} />
             {tab.label}
           </button>
         );
@@ -399,7 +458,7 @@ function BottomPanel({ height }: { height: number }) {
         {activeTab === 'sequencer' && selectedTrack && selectedPattern ? (
           <StepSequencer trackId={selectedTrack.id} patternId={selectedPattern.id} />
         ) : activeTab === 'sequencer' ? (
-          <EmptyPanelHint icon="⊞" text="Select a track to use the step sequencer" />
+          <EmptyPanelHint icon="seq" text="Select a track to use the step sequencer" />
         ) : null}
 
         {activeTab === 'piano-roll' && selectedTrack && selectedPattern ? (
@@ -408,10 +467,11 @@ function BottomPanel({ height }: { height: number }) {
               trackId={selectedTrack.id}
               patternId={selectedPattern.id}
               onClose={() => setActiveTab('sequencer' as const)}
+              embedded={true}
             />
           </div>
         ) : activeTab === 'piano-roll' ? (
-          <EmptyPanelHint icon="🎹" text="Select a track to open the piano roll" />
+          <EmptyPanelHint icon="piano" text="Select a track to open the piano roll" />
         ) : null}
 
         {activeTab === 'ai' && <AIPanel />}
@@ -444,6 +504,36 @@ function BottomPanel({ height }: { height: number }) {
 }
 
 function EmptyPanelHint({ icon, text }: { icon: string; text: string }) {
+  const IconSvg = () => {
+    if (icon === 'seq') return (
+      <svg width="32" height="32" viewBox="0 0 12 12" fill="#333">
+        <rect x="0" y="0" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="3.2" y="0" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="6.4" y="0" width="2.5" height="2.5" rx="0.4" opacity="0.4"/>
+        <rect x="9.5" y="0" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="0" y="3.2" width="2.5" height="2.5" rx="0.4" opacity="0.4"/>
+        <rect x="3.2" y="3.2" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="6.4" y="3.2" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="9.5" y="3.2" width="2.5" height="2.5" rx="0.4" opacity="0.4"/>
+        <rect x="0" y="6.4" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="3.2" y="6.4" width="2.5" height="2.5" rx="0.4" opacity="0.4"/>
+        <rect x="6.4" y="6.4" width="2.5" height="2.5" rx="0.4"/>
+        <rect x="9.5" y="6.4" width="2.5" height="2.5" rx="0.4"/>
+      </svg>
+    );
+    if (icon === 'piano') return (
+      <svg width="36" height="28" viewBox="0 0 13 11" fill="#333">
+        {[0,1.9,3.8,5.7,7.6,9.5,11.4].map((x, i) => (
+          <rect key={i} x={x} y="0" width="1.7" height="11" rx="0.3"/>
+        ))}
+        {[1.1,3,6.8,8.7,10.6].map((x, i) => (
+          <rect key={i} x={x} y="0" width="1.2" height="6.5" rx="0.2" fill="#111"/>
+        ))}
+      </svg>
+    );
+    return <span style={{ fontSize: 28 }}>{icon}</span>;
+  };
+
   return (
     <div style={{
       height: '100%',
@@ -452,10 +542,10 @@ function EmptyPanelHint({ icon, text }: { icon: string; text: string }) {
       alignItems: 'center',
       justifyContent: 'center',
       color: '#333',
-      gap: 8,
+      gap: 10,
     }}>
-      <span style={{ fontSize: 32 }}>{icon}</span>
-      <span style={{ fontSize: 12 }}>{text}</span>
+      <IconSvg />
+      <span style={{ fontSize: 11, color: '#444', fontFamily: 'monospace' }}>{text}</span>
     </div>
   );
 }
@@ -485,31 +575,34 @@ function LeftSidebar({ width }: { width: number }) {
         borderBottom: '1px solid #1e1e28',
         flexShrink: 0,
       }}>
-        {[
-          { icon: '🗂', label: 'Samples', active: sampleBrowserOpen, onClick: () => setSampleBrowserOpen(!sampleBrowserOpen) },
-        ].map(item => (
-          <button
-            key={item.label}
-            onClick={item.onClick}
-            title={item.label}
-            style={{
-              background: item.active ? '#9945ff22' : 'transparent',
-              border: `1px solid ${item.active ? '#9945ff55' : 'transparent'}`,
-              borderRadius: 4,
-              color: item.active ? '#9945ff' : '#444',
-              cursor: 'pointer',
-              padding: '6px',
-              fontSize: 16,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 32,
-              height: 32,
-            }}
-          >
-            {item.icon}
-          </button>
-        ))}
+        {/* Samples browser toggle — SVG icon, no emoji */}
+        <button
+          onClick={() => setSampleBrowserOpen(!sampleBrowserOpen)}
+          title="Sample Browser"
+          style={{
+            background: sampleBrowserOpen ? '#9945ff22' : 'transparent',
+            border: `1px solid ${sampleBrowserOpen ? '#9945ff55' : 'transparent'}`,
+            borderRadius: 4,
+            color: sampleBrowserOpen ? '#9945ff' : '#444',
+            cursor: 'pointer',
+            padding: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 32,
+            height: 32,
+          }}
+        >
+          {/* Grid / waveform icon representing a sample library */}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <rect x="0" y="0" width="6" height="4" rx="0.8" opacity="0.9"/>
+            <rect x="7" y="0" width="9" height="4" rx="0.8" opacity="0.5"/>
+            <rect x="0" y="5.5" width="9" height="4" rx="0.8" opacity="0.7"/>
+            <rect x="10.5" y="5.5" width="5.5" height="4" rx="0.8" opacity="0.9"/>
+            <rect x="0" y="11" width="4" height="4" rx="0.8" opacity="0.5"/>
+            <rect x="5.5" y="11" width="10.5" height="4" rx="0.8" opacity="0.8"/>
+          </svg>
+        </button>
       </div>
 
       {/* Content */}
