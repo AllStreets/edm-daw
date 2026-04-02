@@ -483,6 +483,32 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
     [tool, removeNote, trackId, patternId]
   );
 
+  const handleGridDragOver = useCallback((e: React.DragEvent<SVGSVGElement>) => {
+    if (e.dataTransfer.types.includes('application/x-daw-sample')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }, []);
+
+  const handleGridDrop = useCallback(
+    (e: React.DragEvent<SVGSVGElement>) => {
+      e.preventDefault();
+      const raw = e.dataTransfer.getData('application/x-daw-sample');
+      if (!raw) return;
+      // DragEvent extends MouseEvent — getGridPos works with it
+      const { step, pitch } = getGridPos(e as unknown as React.MouseEvent);
+      const newNote: Note = {
+        id: crypto.randomUUID(),
+        pitch,
+        startStep: step,
+        duration: snap,
+        velocity: 100,
+      };
+      addNote(trackId, patternId, newNote);
+    },
+    [getGridPos, snap, addNote, trackId, patternId]
+  );
+
   // ── Piano key rows ───────────────────────────────────────────────────────────
 
   const pianoKeys = useMemo(() => {
@@ -934,6 +960,8 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
                 height={gridHeight}
                 style={{ display: 'block', cursor: tool === 'eraser' ? 'crosshair' : tool === 'pencil' ? 'crosshair' : 'default' }}
                 onMouseDown={handleGridMouseDown}
+                onDragOver={handleGridDragOver}
+                onDrop={handleGridDrop}
               >
                 {renderGridLines()}
                 {renderNotes()}
