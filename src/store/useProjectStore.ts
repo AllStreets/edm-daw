@@ -146,8 +146,10 @@ interface ProjectState {
   updateScene: (id: string, changes: Partial<Scene>) => void;
   assignClipToScene: (sceneId: string, trackId: string, clipId: string | null) => void;
   launchScene: (sceneId: string) => void;
+  reorderScenes: (fromIndex: number, toIndex: number) => void;
 
   updateSynthSettings: (trackId: string, settings: SynthSettings) => void;
+  setMasterVolume: (vol: number) => void;
   addEffect: (trackId: string, type: Effect['type']) => void;
   removeEffect: (trackId: string, effectId: string) => void;
   updateEffect: (trackId: string, effectId: string, settings: Effect['settings']) => void;
@@ -232,27 +234,31 @@ export const useProjectStore = create<ProjectState>()(
     async play() {
       await audioEngine.start();
 
-      // Lazily create synth/drum tracks if not yet created
       const { project } = get();
       for (const track of project.tracks) {
+        const pattern = track.patterns[0];
+        if (!pattern) continue;
+
+        // Create synth for melodic tracks
         if (track.type === 'synth') {
           if (!audioEngine.getSynth(track.id)) {
             audioEngine.createSynthTrack(track.id, track.synthSettings);
           }
-          // Start melodic sequencer if pattern has notes
-          const pattern = track.patterns[0];
-          if (pattern && pattern.notes.length > 0) {
+          // Start melodic sequencer if the pattern has piano-roll notes
+          if (pattern.notes.length > 0) {
             audioEngine.startMelodicSequencer(track.id, pattern, (step) => {
               get().setCurrentStep(step);
             });
           }
-        } else if (track.type === 'drum') {
-          const pattern = track.patterns[0];
-          if (pattern) {
-            audioEngine.createDrumSequencer(track.id, pattern, (step) => {
-              get().setCurrentStep(step);
-            });
-          }
+        }
+
+        // Start drum sequencer for ANY track that has step data toggled on.
+        // This means using the step sequencer on a bass/lead track still fires drums.
+        const hasStepData = pattern.stepData?.some(row => row?.some(Boolean));
+        if (hasStepData || track.type === 'drum') {
+          audioEngine.createDrumSequencer(track.id, pattern, (step) => {
+            get().setCurrentStep(step);
+          });
         }
       }
 
@@ -262,14 +268,11 @@ export const useProjectStore = create<ProjectState>()(
     },
 
     stop() {
-      // Stop all sequencers
       const { project } = get();
       for (const track of project.tracks) {
-        if (track.type === 'drum') {
-          audioEngine.stopDrumSequencer(track.id);
-        } else if (track.type === 'synth') {
-          audioEngine.stopMelodicSequencer(track.id);
-        }
+        // Stop both drum and melodic sequencers for every track (safe to call even if not running)
+        audioEngine.stopDrumSequencer(track.id);
+        audioEngine.stopMelodicSequencer(track.id);
       }
       audioEngine.stop();
       set(draft => {
@@ -348,9 +351,14 @@ export const useProjectStore = create<ProjectState>()(
     toggleSolo(id) {
       set(draft => {
         const track = draft.project.tracks.find(t => t.id === id);
-        if (track) {
-          track.solo = !track.solo;
-        }
+        if (track) track.solo = !track.solo;
+      });
+      // Apply solo to audio engine: mute all tracks that aren't soloed
+      const { project } = get();
+      const anySoloed = project.tracks.some(t => t.solo);
+      project.tracks.forEach(t => {
+        const shouldMute = t.mute || (anySoloed && !t.solo);
+        audioEngine.setTrackMute(t.id, shouldMute);
       });
     },
 
@@ -398,11 +406,11 @@ export const useProjectStore = create<ProjectState>()(
         pattern.stepData[drumRow][step] = !pattern.stepData[drumRow][step];
         draft.project.modifiedAt = new Date().toISOString();
       });
-      // Hot-reload drum sequencer with updated pattern while playing
+      // Hot-reload drum sequencer with updated pattern while playing (any track type)
       if (get().isPlaying) {
         const track = get().project.tracks.find(t => t.id === trackId);
         const pattern = track?.patterns.find(p => p.id === patternId);
-        if (track?.type === 'drum' && pattern) {
+        if (pattern) {
           audioEngine.createDrumSequencer(trackId, pattern, (s) => get().setCurrentStep(s));
         }
       }
@@ -493,8 +501,19 @@ export const useProjectStore = create<ProjectState>()(
       const { project } = get();
       const scene = project.scenes.find(s => s.id === sceneId);
       if (!scene) return;
-      // In a real implementation this would start all clips in the scene
-      console.log('Launching scene:', scene.name);
+      // Launch scene = start playback (patterns already loaded)
+      get().play();
+    },
+
+    reorderScenes(fromIndex, toIndex) {
+      if (fromIndex === toIndex) return;
+      get()._pushUndo();
+      set(draft => {
+        const scenes = draft.project.scenes;
+        const [removed] = scenes.splice(fromIndex, 1);
+        scenes.splice(toIndex, 0, removed);
+        draft.project.modifiedAt = new Date().toISOString();
+      });
     },
 
     updateSynthSettings(trackId, settings) {
@@ -506,6 +525,13 @@ export const useProjectStore = create<ProjectState>()(
         }
       });
       audioEngine.updateSynthSettings(trackId, settings);
+    },
+
+    setMasterVolume(vol) {
+      set(draft => {
+        draft.project.masterVolume = Math.max(0, Math.min(1, vol));
+      });
+      audioEngine.setMasterVolume(vol);
     },
 
     addEffect(trackId, type) {

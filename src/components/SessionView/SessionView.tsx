@@ -17,11 +17,14 @@ interface SceneHeaderCellProps {
   onNameChange: (v: string) => void;
   onNameCommit: () => void;
   onNameCancel: () => void;
+  isDragging?: boolean;
+  isDropTarget?: boolean;
+  onDragStart?: (e: React.MouseEvent) => void;
 }
 
 const SCENE_COLORS = ['#9945ff', '#00d4ff', '#ff0080', '#00ff88', '#ff6600', '#ffcc00'];
 
-const SceneHeaderCell: React.FC<SceneHeaderCellProps> = ({ name, color, onLaunch, isEditing, editingName, onDoubleClick, onNameChange, onNameCommit, onNameCancel }) => {
+const SceneHeaderCell: React.FC<SceneHeaderCellProps> = ({ name, color, onLaunch, isEditing, editingName, onDoubleClick, onNameChange, onNameCommit, onNameCancel, isDragging, isDropTarget, onDragStart }) => {
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -40,12 +43,15 @@ const SceneHeaderCell: React.FC<SceneHeaderCellProps> = ({ name, color, onLaunch
         borderRight: '1px solid #1a1a2e',
         borderBottom: `2px solid ${color}`,
         transition: 'background 0.15s ease',
-        cursor: 'pointer',
+        cursor: isEditing ? 'text' : 'grab',
         gap: 4,
         flexShrink: 0,
+        opacity: isDragging ? 0.4 : 1,
+        borderLeft: isDropTarget ? '3px solid #00d4ff' : '3px solid transparent',
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onMouseDown={e => { if (!isEditing) onDragStart?.(e); }}
     >
       {isEditing ? (
         <input
@@ -214,14 +220,22 @@ export const SessionView: React.FC = () => {
     isPlaying,
     assignClipToScene,
     updateScene,
+    reorderScenes,
   } = useProjectStore();
 
   const { openSynthEditor, openPianoRoll } = useUIStore();
 
+  const scenes = project.scenes;
+  const tracks = project.tracks;
+
   const [showAddTrack, setShowAddTrack] = useState(false);
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [draggingSceneIndex, setDraggingSceneIndex] = useState<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const addTrackBtnRef = useRef<HTMLButtonElement>(null);
+  const dropTargetRef = useRef<number | null>(null);
+  const sceneDragRef = useRef<{ startX: number; index: number } | null>(null);
 
   // Scroll sync between header col and grid
   const gridScrollRef = useRef<HTMLDivElement>(null);
@@ -244,13 +258,44 @@ export const SessionView: React.FC = () => {
     openPianoRoll(trackId, patternId);
   }, [openPianoRoll]);
 
+  const handleSceneDragStart = useCallback((sceneIndex: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    setDraggingSceneIndex(sceneIndex);
+    sceneDragRef.current = { startX: e.clientX, index: sceneIndex };
+
+    const SCENE_WIDTH = 120;
+
+    const onMove = (me: MouseEvent) => {
+      if (!sceneDragRef.current) return;
+      const delta = me.clientX - sceneDragRef.current.startX;
+      const newIndex = Math.max(0, Math.min(
+        scenes.length - 1,
+        sceneDragRef.current.index + Math.round(delta / SCENE_WIDTH)
+      ));
+      dropTargetRef.current = newIndex;
+      setDropTargetIndex(newIndex);
+    };
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      if (sceneDragRef.current && dropTargetRef.current !== null && dropTargetRef.current !== sceneDragRef.current.index) {
+        reorderScenes(sceneDragRef.current.index, dropTargetRef.current);
+      }
+      setDraggingSceneIndex(null);
+      setDropTargetIndex(null);
+      dropTargetRef.current = null;
+      sceneDragRef.current = null;
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [scenes.length, reorderScenes]);
+
   // Determine which clip is playing per track (simplified: first clip if playing)
   const getPlayingPatternId = (_trackId: string): string | null => {
     return isPlaying ? null : null; // Would hook into real playback state
   };
-
-  const scenes = project.scenes;
-  const tracks = project.tracks;
 
   // Ensure at least 8 tracks shown (pad with nulls for empty rows)
   const MIN_TRACKS = 8;
@@ -468,6 +513,9 @@ export const SessionView: React.FC = () => {
                     setEditingSceneId(null);
                   }}
                   onNameCancel={() => setEditingSceneId(null)}
+                  isDragging={draggingSceneIndex === si}
+                  isDropTarget={dropTargetIndex === si && draggingSceneIndex !== null && draggingSceneIndex !== si}
+                  onDragStart={(e) => handleSceneDragStart(si, e)}
                 />
               );
             })}
