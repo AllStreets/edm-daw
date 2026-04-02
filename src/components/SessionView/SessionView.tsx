@@ -11,11 +11,17 @@ interface SceneHeaderCellProps {
   name: string;
   color: string;
   onLaunch: () => void;
+  isEditing: boolean;
+  editingName: string;
+  onDoubleClick: () => void;
+  onNameChange: (v: string) => void;
+  onNameCommit: () => void;
+  onNameCancel: () => void;
 }
 
 const SCENE_COLORS = ['#9945ff', '#00d4ff', '#ff0080', '#00ff88', '#ff6600', '#ffcc00'];
 
-const SceneHeaderCell: React.FC<SceneHeaderCellProps> = ({ name, color, onLaunch }) => {
+const SceneHeaderCell: React.FC<SceneHeaderCellProps> = ({ name, color, onLaunch, isEditing, editingName, onDoubleClick, onNameChange, onNameCommit, onNameCancel }) => {
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -41,18 +47,49 @@ const SceneHeaderCell: React.FC<SceneHeaderCellProps> = ({ name, color, onLaunch
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <span style={{
-        fontSize: 11,
-        fontWeight: 700,
-        color: hovered ? '#fff' : '#aaa',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        flex: 1,
-        transition: 'color 0.1s ease',
-      }}>
-        {name}
-      </span>
+      {isEditing ? (
+        <input
+          autoFocus
+          value={editingName}
+          onChange={e => onNameChange(e.target.value)}
+          onBlur={onNameCommit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') onNameCommit();
+            if (e.key === 'Escape') onNameCancel();
+            e.stopPropagation();
+          }}
+          style={{
+            flex: 1,
+            background: 'transparent',
+            border: 'none',
+            borderBottom: `1px solid ${color}`,
+            color: '#fff',
+            fontSize: 11,
+            fontWeight: 700,
+            outline: 'none',
+            fontFamily: 'monospace',
+            padding: 0,
+            minWidth: 0,
+          }}
+          onClick={e => e.stopPropagation()}
+        />
+      ) : (
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: hovered ? '#fff' : '#aaa',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flex: 1,
+            transition: 'color 0.1s ease',
+          }}
+          onDoubleClick={e => { e.stopPropagation(); onDoubleClick(); }}
+        >
+          {name}
+        </span>
+      )}
       <button
         onClick={e => { e.stopPropagation(); onLaunch(); }}
         style={{
@@ -175,11 +212,15 @@ export const SessionView: React.FC = () => {
     addScene,
     launchScene,
     isPlaying,
+    assignClipToScene,
+    updateScene,
   } = useProjectStore();
 
   const { openSynthEditor, openPianoRoll } = useUIStore();
 
   const [showAddTrack, setShowAddTrack] = useState(false);
+  const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
   const addTrackBtnRef = useRef<HTMLButtonElement>(null);
 
   // Scroll sync between header col and grid
@@ -392,11 +433,11 @@ export const SessionView: React.FC = () => {
             borderBottom: '1px solid #1a1a2e',
             zIndex: 5,
           }}>
-            {paddedScenes.map((scene, i) => {
+            {paddedScenes.map((scene, si) => {
               if (!scene) {
                 return (
                   <div
-                    key={`empty-scene-${i}`}
+                    key={`empty-scene-${si}`}
                     style={{
                       width: 120,
                       minWidth: 120,
@@ -408,13 +449,25 @@ export const SessionView: React.FC = () => {
                   />
                 );
               }
-              const color = SCENE_COLORS[i % SCENE_COLORS.length];
+              const color = SCENE_COLORS[si % SCENE_COLORS.length];
               return (
                 <SceneHeaderCell
                   key={scene.id}
                   name={scene.name}
                   color={color}
                   onLaunch={() => launchScene(scene.id)}
+                  isEditing={editingSceneId === scene.id}
+                  editingName={editingName}
+                  onDoubleClick={() => {
+                    setEditingSceneId(scene.id);
+                    setEditingName(scene.name);
+                  }}
+                  onNameChange={setEditingName}
+                  onNameCommit={() => {
+                    if (editingName.trim()) updateScene(editingSceneId!, { name: editingName.trim() });
+                    setEditingSceneId(null);
+                  }}
+                  onNameCancel={() => setEditingSceneId(null)}
                 />
               );
             })}
@@ -550,14 +603,27 @@ export const SessionView: React.FC = () => {
                         selectTrack(track.id);
                         launchScene(scene.id);
                       }}
-                      onStop={() => {/* stop clip */}}
+                      onStop={() => {
+                        // Stop audio if playing
+                      }}
                       onEdit={() => {
                         if (effectivePatternId) {
                           handleEditClip(track.id, effectivePatternId);
                         }
                       }}
-                      onDuplicate={() => {/* duplicate */}}
-                      onDelete={() => {/* delete */}}
+                      onDuplicate={() => {
+                        if (effectivePatternId) {
+                          // Add the same pattern to the next scene
+                          const nextSceneIdx = paddedScenes.findIndex(s => s?.id === scene.id) + 1;
+                          const nextScene = paddedScenes[nextSceneIdx];
+                          if (nextScene) {
+                            assignClipToScene(nextScene.id, track.id, effectivePatternId);
+                          }
+                        }
+                      }}
+                      onDelete={() => {
+                        assignClipToScene(scene.id, track.id, null);
+                      }}
                     />
                   );
                 })}
