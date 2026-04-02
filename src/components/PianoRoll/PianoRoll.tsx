@@ -9,6 +9,11 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { midiToNoteName } from '../../utils/musicTheory';
 import type { Note } from '../../types';
 
+// ─── Platform Detection ──────────────────────────────────────────────────────
+const IS_MAC = typeof navigator !== 'undefined'
+  ? ((navigator as any).userAgentData?.platform ?? navigator.platform).toUpperCase().includes('MAC')
+  : false;
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const SEMITONE_HEIGHT = 18;       // px per semitone row
@@ -158,8 +163,7 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
   // ── Key down for delete, copy, paste, select all ──────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const isMac = navigator.platform.toUpperCase().includes('MAC');
-      const mod = isMac ? e.metaKey : e.ctrlKey;
+      const mod = IS_MAC ? e.metaKey : e.ctrlKey;
 
       // Delete / Backspace
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNoteIds.size > 0) {
