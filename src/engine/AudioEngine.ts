@@ -103,17 +103,15 @@ class AudioEngine {
   }
 
   stop(): void {
-    // Release all synth voices immediately to prevent note bleed into next play
-    for (const track of this.tracks.values()) {
-      if (track.synthChain?.synth) {
-        try { track.synthChain.synth.releaseAll(Tone.now()); } catch { /* ignore */ }
-      }
-    }
     Tone.getTransport().stop();
-    Tone.getTransport().cancel(0); // purge all pending scheduled events
+    Tone.getTransport().cancel(0); // purge Transport-level events
     Tone.getTransport().position = '0:0:0';
     this.onSongEnd = null;
     this.songEndFired = false;
+    // Dispose all synths and drum machines so Web Audio-scheduled note events
+    // (triggerAttackRelease futures) don't bleed into the next play.
+    // The gain/panner/send routing nodes stay intact.
+    this.resetTracks();
   }
 
   /**
