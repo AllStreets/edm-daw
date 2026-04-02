@@ -109,6 +109,7 @@ export function createSynth(
     preDelay: effects.reverb.preDelay,
     wet: effects.reverb.on ? effects.reverb.wet : 0,
   });
+  reverb.generate().catch(() => {});
 
   let delay: Tone.FeedbackDelay | Tone.PingPongDelay;
   if (effects.delay.pingPong) {
@@ -166,6 +167,11 @@ export function createSynth(
   return { synth, filter, reverb, delay, chorus, distortion, lfo, gain, dispose };
 }
 
+/** Round any value within `threshold` of 0 to exactly 0, preventing Tone.js range errors. */
+function snapToZero(v: number, threshold = 1e-6): number {
+  return Math.abs(v) < threshold ? 0 : v;
+}
+
 /**
  * Updates all parameters of an existing synth chain
  */
@@ -189,30 +195,32 @@ export function updateSynth(chain: SynthChain, settings: SynthSettings): void {
   }
 
   // Update gain
-  chain.gain.gain.rampTo(oscillator1.volume, 0.05);
+  chain.gain.gain.rampTo(snapToZero(oscillator1.volume), 0.05);
 
   // Update filter
   chain.filter.type = filterSettings.type;
-  chain.filter.frequency.rampTo(filterSettings.cutoff, 0.05);
-  chain.filter.Q.rampTo(filterSettings.resonance * 20, 0.05);
+  chain.filter.frequency.rampTo(Math.max(20, snapToZero(filterSettings.cutoff)), 0.05);
+  chain.filter.Q.rampTo(snapToZero(filterSettings.resonance * 20), 0.05);
 
   // Update reverb
-  chain.reverb.wet.rampTo(effects.reverb.on ? effects.reverb.wet : 0, 0.1);
+  try { chain.reverb.wet.rampTo(snapToZero(effects.reverb.on ? effects.reverb.wet : 0), 0.1); } catch { /* IR not ready */ }
 
   // Update delay
-  chain.delay.wet.rampTo(effects.delay.on ? effects.delay.wet : 0, 0.1);
-  chain.delay.feedback.rampTo(effects.delay.feedback, 0.1);
+  try {
+    chain.delay.wet.rampTo(snapToZero(effects.delay.on ? effects.delay.wet : 0), 0.1);
+    chain.delay.feedback.rampTo(snapToZero(effects.delay.feedback), 0.1);
+  } catch { /* not ready */ }
 
   // Update chorus
-  chain.chorus.wet.rampTo(effects.chorus.on ? effects.chorus.wet : 0, 0.1);
+  chain.chorus.wet.rampTo(snapToZero(effects.chorus.on ? effects.chorus.wet : 0), 0.1);
 
   // Update distortion
-  chain.distortion.wet.rampTo(effects.distortion.on ? effects.distortion.wet : 0, 0.1);
-  chain.distortion.distortion = effects.distortion.amount;
+  chain.distortion.wet.rampTo(snapToZero(effects.distortion.on ? effects.distortion.wet : 0), 0.1);
+  chain.distortion.distortion = snapToZero(effects.distortion.amount);
 
   // Update LFO
-  chain.lfo.frequency.rampTo(lfoSettings.rate, 0.1);
-  chain.lfo.amplitude.rampTo(lfoSettings.on ? lfoSettings.amount : 0, 0.1);
+  chain.lfo.frequency.rampTo(Math.max(0.01, snapToZero(lfoSettings.rate)), 0.1);
+  chain.lfo.amplitude.rampTo(snapToZero(lfoSettings.on ? lfoSettings.amount : 0), 0.1);
   chain.lfo.type = lfoSettings.shape;
 
   if (lfoSettings.on && chain.lfo.state !== 'started') {
