@@ -192,7 +192,13 @@ class AudioEngine {
 
   updateSynthSettings(trackId: string, settings: SynthSettings): void {
     const track = this.tracks.get(trackId);
-    if (track?.synthChain) updateSynth(track.synthChain, settings);
+    if (track?.synthChain) {
+      try {
+        updateSynth(track.synthChain, settings);
+      } catch (e) {
+        console.warn('updateSynth: param update skipped (audio context not ready)', e);
+      }
+    }
   }
 
   getSynth(trackId: string): Tone.PolySynth | null {

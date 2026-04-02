@@ -173,6 +173,21 @@ function snapToZero(v: number, threshold = 1e-6): number {
 }
 
 /**
+ * Safely ramp a Tone.js Param to a value.
+ * Falls back to direct assignment if rampTo throws (e.g. in Safari when the
+ * AudioContext is suspended and AudioParam.minValue/maxValue are temporarily 0).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function safeRamp(param: any, value: number, time = 0.05): void {
+  const v = snapToZero(value);
+  try {
+    param.rampTo(v, time);
+  } catch {
+    try { param.value = v; } catch { /* ignore */ }
+  }
+}
+
+/**
  * Updates all parameters of an existing synth chain
  */
 export function updateSynth(chain: SynthChain, settings: SynthSettings): void {
@@ -195,32 +210,30 @@ export function updateSynth(chain: SynthChain, settings: SynthSettings): void {
   }
 
   // Update gain
-  chain.gain.gain.rampTo(snapToZero(oscillator1.volume), 0.05);
+  safeRamp(chain.gain.gain, oscillator1.volume, 0.05);
 
   // Update filter
   chain.filter.type = filterSettings.type;
-  chain.filter.frequency.rampTo(Math.max(20, snapToZero(filterSettings.cutoff)), 0.05);
-  chain.filter.Q.rampTo(snapToZero(filterSettings.resonance * 20), 0.05);
+  safeRamp(chain.filter.frequency, Math.max(20, filterSettings.cutoff), 0.05);
+  safeRamp(chain.filter.Q, filterSettings.resonance * 20, 0.05);
 
   // Update reverb
-  try { chain.reverb.wet.rampTo(snapToZero(effects.reverb.on ? effects.reverb.wet : 0), 0.1); } catch { /* IR not ready */ }
+  safeRamp(chain.reverb.wet, effects.reverb.on ? effects.reverb.wet : 0, 0.1);
 
   // Update delay
-  try {
-    chain.delay.wet.rampTo(snapToZero(effects.delay.on ? effects.delay.wet : 0), 0.1);
-    chain.delay.feedback.rampTo(snapToZero(effects.delay.feedback), 0.1);
-  } catch { /* not ready */ }
+  safeRamp(chain.delay.wet, effects.delay.on ? effects.delay.wet : 0, 0.1);
+  safeRamp(chain.delay.feedback, effects.delay.feedback, 0.1);
 
   // Update chorus
-  chain.chorus.wet.rampTo(snapToZero(effects.chorus.on ? effects.chorus.wet : 0), 0.1);
+  safeRamp(chain.chorus.wet, effects.chorus.on ? effects.chorus.wet : 0, 0.1);
 
   // Update distortion
-  chain.distortion.wet.rampTo(snapToZero(effects.distortion.on ? effects.distortion.wet : 0), 0.1);
+  safeRamp(chain.distortion.wet, effects.distortion.on ? effects.distortion.wet : 0, 0.1);
   chain.distortion.distortion = snapToZero(effects.distortion.amount);
 
   // Update LFO
-  chain.lfo.frequency.rampTo(Math.max(0.01, snapToZero(lfoSettings.rate)), 0.1);
-  chain.lfo.amplitude.rampTo(snapToZero(lfoSettings.on ? lfoSettings.amount : 0), 0.1);
+  safeRamp(chain.lfo.frequency, Math.max(0.01, lfoSettings.rate), 0.1);
+  safeRamp(chain.lfo.amplitude, lfoSettings.on ? lfoSettings.amount : 0, 0.1);
   chain.lfo.type = lfoSettings.shape;
 
   if (lfoSettings.on && chain.lfo.state !== 'started') {
