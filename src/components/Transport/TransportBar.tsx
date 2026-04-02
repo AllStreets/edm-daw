@@ -313,12 +313,11 @@ const ViewSwitcher: React.FC<ViewSwitcherProps> = ({ active, onChange }) => {
 // ─── Main TransportBar ────────────────────────────────────────────────────────
 
 export const TransportBar: React.FC = () => {
-  const { project, isPlaying, isRecording, currentStep, play, stop, pause, startRecording, stopRecording, setBPM, setActiveView, activeView } =
+  const { project, isPlaying, isRecording, currentStep, play, stop, pause, startRecording, stopRecording, setBPM, setActiveView, activeView, setMasterVolume } =
     useProjectStore();
   const { setActivePanel, activePanel, setBottomPanelTab } = useUIStore();
 
   const [loopActive, setLoopActive] = useState(false);
-  const [masterVolume, setMasterVolume] = useState(project.masterVolume);
 
   const handlePlayPause = useCallback(() => {
     if (isPlaying) {
@@ -539,7 +538,7 @@ export const TransportBar: React.FC = () => {
         <div style={{ width: 1, height: 30, background: '#1e1e3a', flexShrink: 0 }} />
 
         {/* ── Master Volume ── */}
-        <MasterVolume value={masterVolume} onChange={setMasterVolume} />
+        <MasterVolume value={project.masterVolume} onChange={setMasterVolume} />
 
         {/* ── CPU Meter ── */}
         <CPUMeter />

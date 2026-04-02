@@ -444,7 +444,7 @@ function ArrangementPlaceholder() {
 // ─── Bottom panel ─────────────────────────────────────────────────────────────
 
 function BottomPanel({ height }: { height: number }) {
-  const { project, selectedTrackId } = useProjectStore();
+  const { project, selectedTrackId, activeSceneId } = useProjectStore();
   const {
     bottomPanelTab: activeTab,
     setBottomPanelTab: setActiveTab,
@@ -454,16 +454,25 @@ function BottomPanel({ height }: { height: number }) {
 
   const selectedTrack = project.tracks.find(t => t.id === selectedTrackId);
 
-  // Prefer the clip explicitly opened from session view over the track's first pattern
+  // Helper: find the pattern assigned to a track in the active scene (if any)
+  const activeScenePatternFor = (track: typeof selectedTrack) => {
+    if (!track || !activeSceneId) return undefined;
+    const scene = project.scenes.find(s => s.id === activeSceneId);
+    const pid = scene?.clips[track.id];
+    return pid ? track.patterns.find(p => p.id === pid) : undefined;
+  };
+
+  // Piano roll: prefer explicitly-opened clip, then active-scene clip, then patterns[0]
   const pianoRollTrack = pianoRollTrackId
     ? project.tracks.find(t => t.id === pianoRollTrackId)
     : selectedTrack;
   const pianoRollPattern = pianoRollTrack && pianoRollPatternId
     ? pianoRollTrack.patterns.find(p => p.id === pianoRollPatternId)
-    : pianoRollTrack?.patterns[0];
+    : (activeScenePatternFor(pianoRollTrack) ?? pianoRollTrack?.patterns[0]);
 
+  // Step sequencer: prefer active-scene clip, then patterns[0]
   const seqTrack = selectedTrack;
-  const seqPattern = seqTrack?.patterns[0];
+  const seqPattern = activeScenePatternFor(seqTrack) ?? seqTrack?.patterns[0];
 
   // Auto-switch to piano-roll tab when a clip is opened from session view
   const prevPianoRollTrackId = React.useRef<string | null>(null);

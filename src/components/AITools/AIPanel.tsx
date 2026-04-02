@@ -636,14 +636,20 @@ export function AIPanel() {
 
         if (drumTrack) {
           const d = patterns.drums;
-          const pad16 = (arr: boolean[]) => [...arr, ...Array(16).fill(false)];
+          // Repeat the 16-step pattern to fill the full section length
+          // e.g. 8 bars = 128 steps = 8× the 16-step loop
+          const repeat16 = (arr: boolean[]) => {
+            const out: boolean[] = [];
+            for (let s = 0; s < loopSteps; s++) out.push(arr[s % 16]);
+            return out;
+          };
           const stepData = [
-            pad16(d.kick), pad16(d.snare), pad16(d.clap), pad16(d.hihat),
-            pad16(d.openHihat), pad16(d.tom), pad16(d.rim), pad16(d.cymbal),
-            pad16(d.kick2), pad16(d.snare2), pad16(d.crash), pad16(d.ride),
-            pad16(d.tomHi), pad16(d.tomLo), pad16(d.impact), pad16(d.reverseSweep),
+            repeat16(d.kick), repeat16(d.snare), repeat16(d.clap), repeat16(d.hihat),
+            repeat16(d.openHihat), repeat16(d.tom), repeat16(d.rim), repeat16(d.cymbal),
+            repeat16(d.kick2), repeat16(d.snare2), repeat16(d.crash), repeat16(d.ride),
+            repeat16(d.tomHi), repeat16(d.tomLo), repeat16(d.impact), repeat16(d.reverseSweep),
           ];
-          const pat = defaultPattern({ name: `${name} Drums`, steps: 32, stepData });
+          const pat = defaultPattern({ name: `${name} Drums`, steps: loopSteps, stepData });
           addPatternToTrack(drumTrack.id, pat);
           assignClipToScene(sceneId, drumTrack.id, pat.id);
         }
