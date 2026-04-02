@@ -309,7 +309,7 @@ export function defaultPattern(overrides?: Partial<Pattern>): Pattern {
     name: 'Pattern 1',
     steps: 16,
     notes: [],
-    stepData: Array.from({ length: 8 }, () => Array(32).fill(false)),
+    stepData: Array.from({ length: 16 }, () => Array(32).fill(false)),
     color: '#9945ff',
     ...overrides,
   };

@@ -144,6 +144,8 @@ interface ProjectState {
   updateNote: (trackId: string, patternId: string, noteId: string, changes: Partial<Note>) => void;
 
   addScene: () => void;
+  addNamedScene: (name: string) => string;  // returns the new scene's id
+  addPatternToTrack: (trackId: string, pattern: Pattern) => void;
   removeScene: (id: string) => void;
   updateScene: (id: string, changes: Partial<Scene>) => void;
   assignClipToScene: (sceneId: string, trackId: string, clipId: string | null) => void;
@@ -489,6 +491,27 @@ export const useProjectStore = create<ProjectState>()(
       set(draft => {
         draft.project.scenes.push(scene);
         draft.project.modifiedAt = new Date().toISOString();
+      });
+    },
+
+    addNamedScene(name) {
+      get()._pushUndo();
+      const id = crypto.randomUUID();
+      const scene: Scene = { id, name, clips: {} };
+      set(draft => {
+        draft.project.scenes.push(scene);
+        draft.project.modifiedAt = new Date().toISOString();
+      });
+      return id;
+    },
+
+    addPatternToTrack(trackId, pattern) {
+      set(draft => {
+        const track = draft.project.tracks.find(t => t.id === trackId);
+        if (track) {
+          track.patterns.push(pattern);
+          draft.project.modifiedAt = new Date().toISOString();
+        }
       });
     },
 
