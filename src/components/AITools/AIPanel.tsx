@@ -1,6 +1,12 @@
 import { useState, useCallback } from 'react';
 import { useAIStore } from '../../store/useAIStore';
 import { useProjectStore } from '../../store/useProjectStore';
+import { generateFullSong } from '../../services/ClaudeSongGenerator';
+import type { GeneratedSongV2 } from '../../services/ClaudeSongGenerator';
+import { defaultPattern } from '../../types';
+import { SYNTH_PRESETS } from '../../engine/SynthPresets';
+import { useUIStore } from '../../store/useUIStore';
+import { audioEngine } from '../../engine/AudioEngine';
 
 // =====================================================
 // Shared UI primitives
@@ -25,16 +31,18 @@ function GradientButton({
       disabled={disabled || loading}
       className="relative overflow-hidden font-bold font-mono tracking-wider transition-all"
       style={{
-        padding: small ? '4px 12px' : '8px 20px',
-        fontSize: small ? 10 : 12,
-        borderRadius: 6,
+        width: '100%',
+        padding: small ? '6px 16px' : '12px 24px',
+        fontSize: small ? 10 : 13,
+        borderRadius: 8,
         background: disabled || loading
           ? '#1a1a2a'
           : 'linear-gradient(135deg, #9945ff, #6633cc)',
         color: disabled || loading ? '#444' : '#fff',
         border: `1px solid ${disabled || loading ? '#222' : '#9945ff88'}`,
-        boxShadow: disabled || loading ? 'none' : '0 0 12px rgba(153,69,255,0.4)',
+        boxShadow: disabled || loading ? 'none' : '0 0 20px rgba(153,69,255,0.5)',
         cursor: disabled || loading ? 'not-allowed' : 'pointer',
+        justifyContent: 'center',
       }}
     >
       {loading ? (
@@ -46,7 +54,11 @@ function GradientButton({
         </span>
       ) : (
         <span className="flex items-center gap-1.5">
-          {!small && <span>⚡</span>}
+          {!small && (
+            <svg width="11" height="14" viewBox="0 0 11 14" fill="currentColor">
+              <polygon points="7,0 0,8 5,8 4,14 11,6 6,6"/>
+            </svg>
+          )}
           {children}
         </span>
       )}
@@ -86,6 +98,100 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="text-[9px] font-bold font-mono tracking-widest text-gray-600 uppercase mb-1">
       {children}
+    </div>
+  );
+}
+
+// ── Themed range slider ───────────────────────────────────────────────────────
+// Renders purple fill on the left, dark track on the right, matching the app theme.
+// Uses inline background gradient computed from the current value since CSS
+// ::-webkit-slider-runnable-track can't read JS state.
+
+const THUMB = 20;   // thumb diameter px
+const TRACK = 4;    // track height px
+
+function SliderInput({
+  value,
+  min = 0,
+  max = 1,
+  step = 0.01,
+  onChange,
+}: {
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  onChange: (v: number) => void;
+}) {
+  const pct = ((value - min) / (max - min)) * 100;
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: THUMB }}>
+      {/* Track background */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: THUMB / 2,
+          right: THUMB / 2,
+          height: TRACK,
+          transform: 'translateY(-50%)',
+          borderRadius: TRACK / 2,
+          background: '#1a1a2e',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Filled portion */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: `${pct}%`,
+            background: '#9945ff',
+            borderRadius: TRACK / 2,
+          }}
+        />
+      </div>
+
+      {/* Thumb — perfectly centered on track */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: `calc(${pct / 100} * (100% - ${THUMB}px))`,
+          transform: 'translateY(-50%)',
+          width: THUMB,
+          height: THUMB,
+          borderRadius: '50%',
+          background: '#9945ff',
+          border: '2px solid #0d0d18',
+          boxShadow: '0 0 8px rgba(153,69,255,0.7)',
+          pointerEvents: 'none',
+        }}
+      />
+
+      {/* Invisible native input for drag interaction */}
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={e => onChange(parseFloat(e.target.value))}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          opacity: 0,
+          cursor: 'pointer',
+          margin: 0,
+          padding: 0,
+        }}
+      />
     </div>
   );
 }
@@ -283,8 +389,23 @@ function MixSuggestionCard({
 // =====================================================
 // Tab definitions
 // =====================================================
-const TABS = ['Chords', 'Bassline', 'Melody', 'Drums', 'Mix', 'Prompt'] as const;
+const TABS = ['Song', 'Chords', 'Bassline', 'Melody', 'Drums', 'Mix', 'Prompt'] as const;
 type Tab = typeof TABS[number];
+
+const TAB_ICONS: Record<Tab, string> = {
+  Song:     '✦',
+  Chords:   '♩',
+  Bassline: '⌇',
+  Melody:   '~',
+  Drums:    '◈',
+  Mix:      '≋',
+  Prompt:   '›',
+};
+
+const MODELS = [
+  { id: 'claude-sonnet-4-5', label: 'Sonnet 4.5', cost: '~$0.01', desc: 'Fast · Cheap' },
+  { id: 'claude-opus-4-5',   label: 'Opus 4.5',   cost: '~$0.15', desc: 'Best · Expensive' },
+] as const;
 
 // =====================================================
 // Main AIPanel
@@ -305,10 +426,13 @@ export function AIPanel() {
   const {
     project, selectedTrackId,
     updateSynthSettings, toggleStep,
-    addNote,
+    addNote, setBPM, play, stop, isPlaying,
+    assignClipToScene, addNamedScene, addPatternToTrack, removeScene,
   } = useProjectStore();
 
-  const [activeTab, setActiveTab] = useState<Tab>('Chords');
+  const { setActivePanel, setBottomPanelTab } = useUIStore();
+
+  const [activeTab, setActiveTab] = useState<Tab>('Song');
   const [prompt, setPrompt] = useState('');
   const [promptApplied, setPromptApplied] = useState('');
   const [selectedTrackForAI, setSelectedTrackForAI] = useState(selectedTrackId ?? project.tracks[0]?.id ?? '');
@@ -324,18 +448,205 @@ export function AIPanel() {
   const [bassStyle, setBassStyle] = useState<'Simple' | 'Walking' | 'Aggressive' | 'Melodic'>('Simple');
   const [melodyComplexity, setMelodyComplexity] = useState(0.5);
 
+  // Song generator state
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('claude_api_key') ?? '');
+  const [selectedModel, setSelectedModel] = useState<string>(
+    () => localStorage.getItem('claude_model') ?? 'claude-sonnet-4-5'
+  );
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [songPrompt, setSongPrompt] = useState('');
+  const [songGenerating, setSongGenerating] = useState(false);
+  const [songProgress, setSongProgress] = useState('');
+  const [sectionsDone, setSectionsDone] = useState<string[]>([]);
+  const [songResult, setSongResult] = useState<GeneratedSongV2 | null>(null);
+  const [songError, setSongError] = useState('');
+  const [songPlanPreview, setSongPlanPreview] = useState<string[]>([]);
+
   const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const SCALES = ['major', 'minor', 'dorian', 'phrygian', 'mixolydian'];
   const MOODS = ['Happy', 'Dark', 'Tense', 'Dreamy', 'Aggressive'];
   const BARS_OPTIONS = [4, 8, 16];
+  // SVG icons for each genre — no emojis
+  const GenreIcon = ({ id, active }: { id: string; active: boolean }) => {
+    const c = active ? '#9945ff' : '#555';
+    if (id === 'house') return (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill={c}>
+        {/* 4-on-floor kick dots */}
+        <circle cx="3" cy="10" r="2.2"/><circle cx="8.3" cy="10" r="2.2"/>
+        <circle cx="13.6" cy="10" r="2.2"/><circle cx="18.9" cy="10" r="2.2"/>
+        <rect x="1" y="14" width="18" height="1.5" rx="0.5" opacity="0.4"/>
+        <rect x="1" y="5" width="18" height="1" rx="0.5" opacity="0.25"/>
+      </svg>
+    );
+    if (id === 'techno') return (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round">
+        {/* Gear-like mechanical lines */}
+        <circle cx="10" cy="10" r="4" stroke={c} strokeWidth="1.5"/>
+        <line x1="10" y1="1" x2="10" y2="4"/><line x1="10" y1="16" x2="10" y2="19"/>
+        <line x1="1" y1="10" x2="4" y2="10"/><line x1="16" y1="10" x2="19" y2="10"/>
+        <line x1="3.2" y1="3.2" x2="5.4" y2="5.4"/><line x1="14.6" y1="14.6" x2="16.8" y2="16.8"/>
+        <line x1="16.8" y1="3.2" x2="14.6" y2="5.4"/><line x1="5.4" y1="14.6" x2="3.2" y2="16.8"/>
+      </svg>
+    );
+    if (id === 'dubstep') return (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill={c}>
+        {/* Waveform with a drop/spike */}
+        <rect x="0" y="9" width="20" height="2" rx="1" opacity="0.3"/>
+        <rect x="1" y="7" width="2" height="6" rx="1"/>
+        <rect x="4.5" y="5" width="2" height="10" rx="1"/>
+        <rect x="8" y="1" width="2.5" height="18" rx="1"/>
+        <rect x="12" y="6" width="2" height="8" rx="1"/>
+        <rect x="15.5" y="8" width="2" height="4" rx="1"/>
+        <rect x="18" y="9" width="2" height="2" rx="1"/>
+      </svg>
+    );
+    if (id === 'dnb') return (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill={c}>
+        {/* Breakbeat pattern — syncopated dots */}
+        <circle cx="2" cy="7" r="2"/><circle cx="7" cy="13" r="2"/>
+        <circle cx="10.5" cy="7" r="2"/><circle cx="13" cy="13" r="2"/>
+        <circle cx="16" cy="7" r="2"/>
+        <rect x="1" y="17" width="18" height="1" rx="0.5" opacity="0.3"/>
+      </svg>
+    );
+    if (id === 'trap') return (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill={c}>
+        {/* Hi-hat roll dots (small rapid hits) + sparse kick */}
+        {[1,3,5,7,9,11,13,15,17].map(x => (
+          <circle key={x} cx={x} cy="5" r="0.9" opacity={x % 4 === 1 ? 1 : 0.45}/>
+        ))}
+        <rect x="1" y="10" width="5" height="3" rx="1"/>
+        <rect x="13" y="10" width="5" height="3" rx="1"/>
+        <rect x="7" y="14" width="8" height="3" rx="1" opacity="0.5"/>
+      </svg>
+    );
+    if (id === 'future-bass') return (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        {/* Uplifting curve + chord stack */}
+        <path d="M1 18 Q5 4 10 8 Q15 12 19 2"/>
+        <line x1="6" y1="14" x2="6" y2="18" stroke={c} strokeWidth="1.2" opacity="0.6"/>
+        <line x1="10" y1="12" x2="10" y2="18" stroke={c} strokeWidth="1.2" opacity="0.6"/>
+        <line x1="14" y1="10" x2="14" y2="18" stroke={c} strokeWidth="1.2" opacity="0.6"/>
+      </svg>
+    );
+    return null;
+  };
+
   const GENRES = [
-    { id: 'house', label: 'House', icon: '🏠' },
-    { id: 'techno', label: 'Techno', icon: '⚙️' },
-    { id: 'dubstep', label: 'Dubstep', icon: '🔊' },
-    { id: 'dnb', label: 'DnB', icon: '🥁' },
-    { id: 'trap', label: 'Trap', icon: '💎' },
-    { id: 'future-bass', label: 'Future', icon: '🌊' },
+    { id: 'house',      label: 'House'   },
+    { id: 'techno',     label: 'Techno'  },
+    { id: 'dubstep',    label: 'Dubstep' },
+    { id: 'dnb',        label: 'DnB'     },
+    { id: 'trap',       label: 'Trap'    },
+    { id: 'future-bass',label: 'Future'  },
   ];
+
+  const handleGenerateSong = useCallback(async () => {
+    if (!apiKey.trim()) { setSongError('Enter your Anthropic API key first.'); return; }
+    if (!songPrompt.trim()) { setSongError('Describe the song you want.'); return; }
+
+    localStorage.setItem('claude_api_key', apiKey.trim());
+    localStorage.setItem('claude_model', selectedModel);
+
+    audioEngine.start().catch(() => {});
+
+    setSongGenerating(true);
+    setSongProgress('');
+    setSectionsDone([]);
+    setSongPlanPreview([]);
+    setSongResult(null);
+    setSongError('');
+
+    try {
+      if (isPlaying) stop();
+
+      const result = await generateFullSong(
+        apiKey.trim(),
+        songPrompt.trim(),
+        selectedModel,
+        (text, done) => {
+          setSongProgress(text);
+          setSectionsDone([...done]);
+          if (text.startsWith('Structure planned:')) {
+            const names = text.replace('Structure planned: ', '').split(' \u2192 ');
+            setSongPlanPreview(names);
+          }
+        },
+      );
+
+      const { plan, sections } = result;
+      setBPM(plan.bpm);
+
+      // Remove all existing scenes
+      const existingSceneIds = [...project.scenes.map(s => s.id)];
+      existingSceneIds.forEach(id => removeScene(id));
+
+      // For each section: create a scene + patterns per track
+      for (const { name, patterns } of sections) {
+        const sceneId = addNamedScene(name);
+
+        const sectionBars = result.plan.sections.find(s => s.name === name)?.bars ?? 8;
+        const loopSteps = sectionBars * 16;
+
+        // Find tracks by known IDs (from createDefaultProject)
+        const leadTrack = project.tracks.find(t => t.id === 'track-lead');
+        const bassTrack = project.tracks.find(t => t.id === 'track-bass');
+        const padTrack = project.tracks.find(t => t.id === 'track-pad');
+        const drumTrack = project.tracks.find(t => t.id === 'track-drums');
+
+        if (leadTrack) {
+          const presetSettings = SYNTH_PRESETS[patterns.leadPreset] ?? SYNTH_PRESETS['Supersaw'];
+          updateSynthSettings(leadTrack.id, presetSettings);
+          const pat = defaultPattern({ name: `${name} Lead`, steps: loopSteps, notes: patterns.lead.notes.map(n => ({ ...n, id: crypto.randomUUID() })) });
+          addPatternToTrack(leadTrack.id, pat);
+          assignClipToScene(sceneId, leadTrack.id, pat.id);
+        }
+
+        if (bassTrack) {
+          const presetSettings = SYNTH_PRESETS[patterns.bassPreset] ?? SYNTH_PRESETS['Reese Bass'];
+          updateSynthSettings(bassTrack.id, presetSettings);
+          const pat = defaultPattern({ name: `${name} Bass`, steps: loopSteps, notes: patterns.bass.notes.map(n => ({ ...n, id: crypto.randomUUID() })) });
+          addPatternToTrack(bassTrack.id, pat);
+          assignClipToScene(sceneId, bassTrack.id, pat.id);
+        }
+
+        if (padTrack) {
+          const presetSettings = SYNTH_PRESETS[patterns.padPreset] ?? SYNTH_PRESETS['Lush Pad'];
+          updateSynthSettings(padTrack.id, presetSettings);
+          const pat = defaultPattern({ name: `${name} Pad`, steps: loopSteps, notes: patterns.pad.notes.map(n => ({ ...n, id: crypto.randomUUID() })) });
+          addPatternToTrack(padTrack.id, pat);
+          assignClipToScene(sceneId, padTrack.id, pat.id);
+        }
+
+        if (drumTrack) {
+          const d = patterns.drums;
+          const pad16 = (arr: boolean[]) => [...arr, ...Array(16).fill(false)];
+          const stepData = [
+            pad16(d.kick), pad16(d.snare), pad16(d.clap), pad16(d.hihat),
+            pad16(d.openHihat), pad16(d.tom), pad16(d.rim), pad16(d.cymbal),
+            pad16(d.kick2), pad16(d.snare2), pad16(d.crash), pad16(d.ride),
+            pad16(d.tomHi), pad16(d.tomLo), pad16(d.impact), pad16(d.reverseSweep),
+          ];
+          const pat = defaultPattern({ name: `${name} Drums`, steps: 32, stepData });
+          addPatternToTrack(drumTrack.id, pat);
+          assignClipToScene(sceneId, drumTrack.id, pat.id);
+        }
+      }
+
+      setSongResult(result);
+      setActivePanel('session');
+      setBottomPanelTab('sequencer');
+      await play();
+
+    } catch (err) {
+      setSongError(err instanceof Error ? err.message : 'Generation failed');
+    } finally {
+      setSongGenerating(false);
+    }
+  }, [apiKey, selectedModel, songPrompt, isPlaying, stop, setBPM,
+      project.tracks, project.scenes, updateSynthSettings, addPatternToTrack,
+      assignClipToScene, addNamedScene, removeScene,
+      setActivePanel, setBottomPanelTab, play]);
 
   const handleGenerateChords = useCallback(() => {
     const chords = generateChordProgression();
@@ -420,12 +731,10 @@ export function AIPanel() {
     <div
       className="flex flex-col"
       style={{
-        width: 320,
+        width: '100%',
+        height: '100%',
         background: '#09090f',
-        border: '1px solid #1a1a2a',
-        borderRadius: 8,
         overflow: 'hidden',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.8)',
       }}
     >
       {/* Header */}
@@ -456,24 +765,237 @@ export function AIPanel() {
         className="flex shrink-0 overflow-x-auto"
         style={{ borderBottom: '1px solid #1a1a2a', background: '#0a0a14' }}
       >
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className="px-3 py-2 text-[10px] font-bold font-mono whitespace-nowrap transition-all shrink-0"
-            style={{
-              color: activeTab === tab ? '#9945ff' : '#444',
-              borderBottom: `2px solid ${activeTab === tab ? '#9945ff' : 'transparent'}`,
-              background: 'transparent',
-            }}
-          >
-            {tab.toUpperCase()}
-          </button>
-        ))}
+        {TABS.map((tab) => {
+          const isActive = activeTab === tab;
+          return (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className="flex items-center gap-1.5 whitespace-nowrap transition-all shrink-0"
+              style={{
+                padding: '8px 16px',
+                fontSize: 10,
+                fontWeight: isActive ? 700 : 400,
+                fontFamily: 'monospace',
+                letterSpacing: '0.08em',
+                color: isActive ? '#9945ff' : '#555',
+                borderBottom: `2px solid ${isActive ? '#9945ff' : 'transparent'}`,
+                background: isActive ? '#12121e' : 'transparent',
+                borderRight: '1px solid #1a1a2a',
+                cursor: 'pointer',
+              }}
+              onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = '#888'; }}
+              onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = '#555'; }}
+            >
+              <span style={{ fontSize: 11, opacity: 0.8 }}>{TAB_ICONS[tab]}</span>
+              {tab.toUpperCase()}
+            </button>
+          );
+        })}
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3" style={{ minHeight: 0 }}>
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4" style={{ minHeight: 0, maxWidth: 600, width: '100%', alignSelf: 'center' }}>
+
+        {/* ==================== SONG TAB ==================== */}
+        {activeTab === 'Song' && (
+          <>
+            {/* Header */}
+            <div
+              className="p-3 rounded"
+              style={{
+                background: 'linear-gradient(135deg, #0e0a1a, #0a101a)',
+                border: '1px solid #2a1a4a',
+              }}
+            >
+              <div
+                className="text-xs font-bold font-mono tracking-widest mb-2 text-center"
+                style={{
+                  background: 'linear-gradient(90deg, #9945ff, #00d4ff)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                }}
+              >
+                ✦ FULL SONG GENERATOR
+              </div>
+
+              {/* Model selector */}
+              <div className="flex gap-2">
+                {MODELS.map(m => {
+                  const isSelected = selectedModel === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => setSelectedModel(m.id)}
+                      className="flex-1 rounded p-2 text-left transition-all"
+                      style={{
+                        background: isSelected ? '#9945ff22' : '#0a0a14',
+                        border: `1px solid ${isSelected ? '#9945ff88' : '#1a1a2a'}`,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[10px] font-bold font-mono" style={{ color: isSelected ? '#9945ff' : '#666' }}>
+                          {m.label}
+                        </span>
+                        <span className="text-[9px] font-mono" style={{ color: isSelected ? '#00d4ff' : '#444' }}>
+                          {m.cost}
+                        </span>
+                      </div>
+                      <div className="text-[8px] font-mono" style={{ color: '#444' }}>{m.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[9px] font-mono text-center mt-2" style={{ color: '#333' }}>
+                Drops directly into your session · Auto-plays on completion
+              </div>
+            </div>
+
+            {/* API Key */}
+            <div>
+              <SectionLabel>Anthropic API Key</SectionLabel>
+              <div className="flex gap-1">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-ant-..."
+                  className="flex-1 rounded px-2 py-1 text-[11px] font-mono outline-none"
+                  style={{
+                    background: '#0e0e1c',
+                    color: apiKey ? '#9945ff' : '#444',
+                    border: `1px solid ${apiKey ? '#9945ff44' : '#2a2a3a'}`,
+                    caretColor: '#9945ff',
+                  }}
+                />
+                <button
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="px-2 rounded text-[10px] font-mono"
+                  style={{ background: '#1a1a2a', color: '#555', border: '1px solid #2a2a3a' }}
+                >
+                  {showApiKey ? '●' : '○'}
+                </button>
+              </div>
+              {!apiKey && (
+                <div className="text-[9px] font-mono text-gray-600 mt-1">
+                  Get yours at console.anthropic.com
+                </div>
+              )}
+            </div>
+
+            {/* Song Description */}
+            <div>
+              <SectionLabel>Describe Your Song</SectionLabel>
+              <textarea
+                value={songPrompt}
+                onChange={(e) => setSongPrompt(e.target.value)}
+                placeholder="dark dubstep banger with heavy bass drops and aggressive synths..."
+                rows={3}
+                className="w-full rounded p-2 text-[11px] font-mono outline-none resize-none"
+                style={{
+                  background: '#0e0e1c',
+                  color: '#ccc',
+                  border: '1px solid #2a2a3a',
+                  caretColor: '#9945ff',
+                }}
+                onFocus={(e) => { e.target.style.borderColor = '#9945ff44'; }}
+                onBlur={(e) => { e.target.style.borderColor = '#2a2a3a'; }}
+              />
+            </div>
+
+            {/* Quick examples */}
+            <div className="flex flex-wrap gap-1">
+              {[
+                'dark dubstep drop',
+                'euphoric future bass',
+                'minimal techno loop',
+                'trap hi-hat riddim',
+                'melodic house groove',
+              ].map((ex) => (
+                <button
+                  key={ex}
+                  onClick={() => setSongPrompt(ex)}
+                  className="text-[9px] font-mono px-2 py-0.5 rounded transition-colors"
+                  style={{ background: '#0e0e1c', color: '#555', border: '1px solid #1a1a2a' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = '#9945ff'; e.currentTarget.style.borderColor = '#9945ff44'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = '#555'; e.currentTarget.style.borderColor = '#1a1a2a'; }}
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
+
+            {/* Generate button */}
+            <div style={{ display: 'flex' }}>
+              <GradientButton
+                onClick={handleGenerateSong}
+                loading={songGenerating}
+                disabled={!apiKey.trim() || !songPrompt.trim()}
+              >
+                Generate Full Song
+              </GradientButton>
+            </div>
+
+            {/* Error */}
+            {songError && !songGenerating && (
+              <div
+                className="p-2 rounded text-[10px] font-mono"
+                style={{ background: '#1a0a0a', border: '1px solid #aa333344', color: '#ff6666' }}
+              >
+                ✗ {songError}
+              </div>
+            )}
+
+            {/* Progress */}
+            {songGenerating && (
+              <div style={{ background: '#0a0a18', border: '1px solid #1a1a2e', borderRadius: 8, padding: '12px 16px' }}>
+                <div style={{ fontSize: 10, color: '#9945ff', fontFamily: 'monospace', marginBottom: 8, letterSpacing: 2 }}>
+                  GENERATING...
+                </div>
+                {songPlanPreview.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+                    {songPlanPreview.map(name => {
+                      const done = sectionsDone.includes(name);
+                      return (
+                        <span key={name} style={{
+                          fontSize: 9, fontFamily: 'monospace', fontWeight: 700,
+                          padding: '2px 8px', borderRadius: 12,
+                          background: done ? '#9945ff33' : '#1a1a2e',
+                          color: done ? '#9945ff' : '#444',
+                          border: `1px solid ${done ? '#9945ff' : '#2a2a3a'}`,
+                          transition: 'all 0.3s ease',
+                        }}>
+                          {done ? '\u2713 ' : ''}{name}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+                <div style={{ fontSize: 10, color: '#666', fontFamily: 'monospace' }}>{songProgress}</div>
+              </div>
+            )}
+
+            {/* Result */}
+            {songResult && !songGenerating && (
+              <div style={{ background: '#0a1a0a', border: '1px solid #00ff8833', borderRadius: 8, padding: '12px 16px' }}>
+                <div style={{ fontSize: 10, color: '#00ff88', fontFamily: 'monospace', fontWeight: 700, marginBottom: 6 }}>
+                  {'\u2713'} SONG GENERATED {'\u2014'} {songResult.plan.bpm} BPM {'\u00b7'} {songResult.plan.key} {songResult.plan.scale} {'\u00b7'} {songResult.plan.vibe}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {songResult.sections.map(({ name }) => (
+                    <span key={name} style={{
+                      fontSize: 9, fontFamily: 'monospace', padding: '2px 8px', borderRadius: 12,
+                      background: '#9945ff33', color: '#9945ff', border: '1px solid #9945ff55',
+                    }}>
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
         {/* ==================== CHORDS TAB ==================== */}
         {activeTab === 'Chords' && (
@@ -580,47 +1102,37 @@ export function AIPanel() {
             <div>
               <SectionLabel>Genre</SectionLabel>
               <div className="grid grid-cols-3 gap-1.5">
-                {GENRES.map(({ id, label, icon }) => (
-                  <button
-                    key={id}
-                    onClick={() => setAISettings({ genre: id })}
-                    className="flex flex-col items-center gap-1 py-2 rounded transition-all"
-                    style={{
-                      background: aiSettings.genre === id ? '#9945ff22' : '#0e0e1c',
-                      color: aiSettings.genre === id ? '#9945ff' : '#555',
-                      border: `1px solid ${aiSettings.genre === id ? '#9945ff44' : '#1a1a2a'}`,
-                      fontSize: 10,
-                    }}
-                  >
-                    <span style={{ fontSize: 18 }}>{icon}</span>
-                    <span className="font-mono font-bold">{label}</span>
-                  </button>
-                ))}
+                {GENRES.map(({ id, label }) => {
+                  const active = aiSettings.genre === id;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setAISettings({ genre: id })}
+                      className="flex flex-col items-center gap-1.5 py-3 rounded transition-all"
+                      style={{
+                        background: active ? '#9945ff22' : '#0e0e1c',
+                        color: active ? '#9945ff' : '#555',
+                        border: `1px solid ${active ? '#9945ff55' : '#1a1a2a'}`,
+                        fontSize: 10,
+                        boxShadow: active ? '0 0 8px rgba(153,69,255,0.2)' : 'none',
+                      }}
+                    >
+                      <GenreIcon id={id} active={active} />
+                      <span className="font-mono font-bold">{label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             <div>
               <SectionLabel>Complexity</SectionLabel>
-              <input
-                type="range"
-                min={0} max={1} step={0.01}
-                value={complexity}
-                onChange={(e) => setComplexity(parseFloat(e.target.value))}
-                className="w-full"
-                style={{ accentColor: '#9945ff' }}
-              />
+              <SliderInput value={complexity} onChange={setComplexity} />
             </div>
 
             <div>
               <SectionLabel>Fill Probability</SectionLabel>
-              <input
-                type="range"
-                min={0} max={1} step={0.01}
-                value={fillProb}
-                onChange={(e) => setFillProb(parseFloat(e.target.value))}
-                className="w-full"
-                style={{ accentColor: '#9945ff' }}
-              />
+              <SliderInput value={fillProb} onChange={setFillProb} />
             </div>
 
             <GradientButton onClick={handleGenerateDrums} loading={isGenerating}>
@@ -704,26 +1216,20 @@ export function AIPanel() {
 
             <div>
               <SectionLabel>Complexity</SectionLabel>
-              <input
-                type="range" min={0} max={1} step={0.01}
-                value={melodyComplexity}
-                onChange={(e) => setMelodyComplexity(parseFloat(e.target.value))}
-                className="w-full"
-                style={{ accentColor: '#9945ff' }}
-              />
-              <div className="flex justify-between text-[8px] font-mono text-gray-600 mt-0.5">
+              <SliderInput value={melodyComplexity} onChange={setMelodyComplexity} />
+              <div className="flex justify-between text-[8px] font-mono text-gray-600 mt-1">
                 <span>Simple</span><span>Complex</span>
               </div>
             </div>
 
             <div>
               <SectionLabel>Range</SectionLabel>
-              <input type="range" min={0} max={1} step={0.01} defaultValue={0.5} className="w-full" style={{ accentColor: '#9945ff' }} />
+              <SliderInput value={0.5} onChange={() => {}} />
             </div>
 
             <div>
               <SectionLabel>Rhythm Variation</SectionLabel>
-              <input type="range" min={0} max={1} step={0.01} defaultValue={0.4} className="w-full" style={{ accentColor: '#9945ff' }} />
+              <SliderInput value={0.4} onChange={() => {}} />
             </div>
 
             <GradientButton onClick={handleGenerateMelody} loading={isGenerating}>
