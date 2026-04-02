@@ -576,6 +576,161 @@ class AudioEngine {
         break;
       }
 
+      case 'Leads': {
+        const leadTypes: Array<() => void> = [
+          () => { // Supersaw
+            const s = new Tone.PolySynth(Tone.Synth).connect(this.masterGain);
+            s.set({ oscillator: { type: 'sawtooth' as never } });
+            const ch = new Tone.Chorus(2, 3.5, 0.4).connect(this.masterGain);
+            s.disconnect(); s.connect(ch);
+            s.triggerAttackRelease(['C4', 'E4', 'G4'], '4n', now, 0.5);
+            setTimeout(() => { s.dispose(); ch.dispose(); }, 1500);
+          },
+          () => { // Acid Lead
+            const s = new Tone.Synth({ oscillator: { type: 'sawtooth' as const }, envelope: { attack: 0.005, decay: 0.15, sustain: 0.4, release: 0.2 } }).connect(this.masterGain);
+            s.triggerAttackRelease('C4', '4n', now, 0.6);
+            setTimeout(() => s.dispose(), 1200);
+          },
+          () => { // FM Bell
+            const s = new Tone.Synth({ oscillator: { type: 'sine' as const }, envelope: { attack: 0.001, decay: 0.8, sustain: 0.2, release: 1.2 } }).connect(this.masterGain);
+            s.triggerAttackRelease('E5', '4n', now, 0.55);
+            setTimeout(() => s.dispose(), 2000);
+          },
+          () => { // Reese Screech
+            const dist = new Tone.Distortion(0.5).connect(this.masterGain);
+            const s = new Tone.Synth({ oscillator: { type: 'sawtooth' as const }, envelope: { attack: 0.005, decay: 0.1, sustain: 0.7, release: 0.3 } }).connect(dist);
+            s.triggerAttackRelease('A4', '4n', now, 0.6);
+            setTimeout(() => { s.dispose(); dist.dispose(); }, 1200);
+          },
+          () => { // Pluck
+            const rev = new Tone.Reverb({ decay: 1.5, wet: 0.3 }).connect(this.masterGain);
+            const s = new Tone.Synth({ oscillator: { type: 'triangle' as const }, envelope: { attack: 0.001, decay: 0.15, sustain: 0, release: 0.2 } }).connect(rev);
+            s.triggerAttackRelease('G4', '8n', now, 0.65);
+            setTimeout(() => { s.dispose(); rev.dispose(); }, 1000);
+          },
+          () => { // Distorted Square
+            const dist = new Tone.Distortion(0.6).connect(this.masterGain);
+            const s = new Tone.Synth({ oscillator: { type: 'square' as const }, envelope: { attack: 0.005, decay: 0.1, sustain: 0.6, release: 0.2 } }).connect(dist);
+            s.triggerAttackRelease('C5', '4n', now, 0.55);
+            setTimeout(() => { s.dispose(); dist.dispose(); }, 1000);
+          },
+        ];
+        (leadTypes[sampleIdx % leadTypes.length] ?? leadTypes[0])();
+        break;
+      }
+
+      case 'Basses': {
+        const bassTypes: Array<() => void> = [
+          () => { // Reese Bass
+            const ch = new Tone.Chorus(1, 3.5, 0.6).connect(this.masterGain);
+            const s = new Tone.Synth({ oscillator: { type: 'sawtooth' as const }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.8, release: 0.3 } }).connect(ch);
+            s.triggerAttackRelease('C2', '4n', now, 0.75);
+            setTimeout(() => { s.dispose(); ch.dispose(); }, 1200);
+          },
+          () => { // FM Bass
+            const s = new Tone.Synth({ oscillator: { type: 'sine' as const }, envelope: { attack: 0.005, decay: 0.2, sustain: 0.6, release: 0.3 } }).connect(this.masterGain);
+            s.triggerAttackRelease('C2', '4n', now, 0.8);
+            setTimeout(() => s.dispose(), 1200);
+          },
+          () => { // Distorted Bass
+            const dist = new Tone.Distortion(0.5).connect(this.masterGain);
+            const s = new Tone.Synth({ oscillator: { type: 'square' as const }, envelope: { attack: 0.005, decay: 0.15, sustain: 0.7, release: 0.2 } }).connect(dist);
+            s.triggerAttackRelease('C2', '4n', now, 0.75);
+            setTimeout(() => { s.dispose(); dist.dispose(); }, 1200);
+          },
+          () => { // Sub Bass
+            const s = new Tone.Synth({ oscillator: { type: 'sine' as const }, envelope: { attack: 0.01, decay: 0.3, sustain: 0.9, release: 0.4 } }).connect(this.masterGain);
+            s.triggerAttackRelease('C1', '2n', now, 0.85);
+            setTimeout(() => s.dispose(), 1500);
+          },
+          () => { // Wobble Bass
+            const filter = new Tone.Filter({ frequency: 600, type: 'lowpass', Q: 8 }).connect(this.masterGain);
+            const lfo = new Tone.LFO({ frequency: 4, min: 100, max: 2000 }).connect(filter.frequency);
+            const s = new Tone.Synth({ oscillator: { type: 'sawtooth' as const }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.8, release: 0.3 } }).connect(filter);
+            lfo.start(now);
+            s.triggerAttackRelease('C2', '2n', now, 0.75);
+            setTimeout(() => { s.dispose(); filter.dispose(); lfo.dispose(); }, 1500);
+          },
+          () => { // Portamento Bass
+            const s = new Tone.Synth({ oscillator: { type: 'sawtooth' as const }, envelope: { attack: 0.08, decay: 0.2, sustain: 0.7, release: 0.4 } }).connect(this.masterGain);
+            s.triggerAttackRelease('C2', '4n', now, 0.75);
+            setTimeout(() => s.dispose(), 1500);
+          },
+        ];
+        (bassTypes[sampleIdx % bassTypes.length] ?? bassTypes[0])();
+        break;
+      }
+
+      case 'Pads': {
+        const padTypes: Array<() => void> = [
+          () => { // Choir Pad
+            const rev = new Tone.Reverb({ decay: 4, wet: 0.6 }).connect(this.masterGain);
+            const ch = new Tone.Chorus(0.8, 3.5, 0.5).connect(rev);
+            const s = new Tone.PolySynth(Tone.Synth, { envelope: { attack: 0.4, decay: 0.3, sustain: 0.85, release: 2 } }).connect(ch);
+            s.set({ oscillator: { type: 'sawtooth' as never } });
+            s.triggerAttackRelease(['C4', 'E4', 'G4'], '2n', now, 0.4);
+            setTimeout(() => { s.dispose(); ch.dispose(); rev.dispose(); }, 3000);
+          },
+          () => { // Lush Pad
+            const rev = new Tone.Reverb({ decay: 5, wet: 0.7 }).connect(this.masterGain);
+            const s = new Tone.PolySynth(Tone.Synth, { envelope: { attack: 0.5, decay: 0.4, sustain: 0.8, release: 3 } }).connect(rev);
+            s.set({ oscillator: { type: 'sawtooth' as never } });
+            s.triggerAttackRelease(['C4', 'E4', 'G4', 'B4'], '2n', now, 0.35);
+            setTimeout(() => { s.dispose(); rev.dispose(); }, 4000);
+          },
+          () => { // Dark Pad
+            const rev = new Tone.Reverb({ decay: 6, wet: 0.5 }).connect(this.masterGain);
+            const s = new Tone.PolySynth(Tone.Synth, { envelope: { attack: 0.6, decay: 0.5, sustain: 0.7, release: 4 } }).connect(rev);
+            s.set({ oscillator: { type: 'sine' as never } });
+            s.triggerAttackRelease(['C4', 'Eb4', 'G4'], '2n', now, 0.45);
+            setTimeout(() => { s.dispose(); rev.dispose(); }, 5000);
+          },
+          () => { // String Pad
+            const rev = new Tone.Reverb({ decay: 3, wet: 0.4 }).connect(this.masterGain);
+            const s = new Tone.PolySynth(Tone.Synth, { envelope: { attack: 0.2, decay: 0.3, sustain: 0.75, release: 1.5 } }).connect(rev);
+            s.set({ oscillator: { type: 'sawtooth' as never } });
+            s.triggerAttackRelease(['C4', 'E4', 'G4'], '2n', now, 0.4);
+            setTimeout(() => { s.dispose(); rev.dispose(); }, 2500);
+          },
+        ];
+        (padTypes[sampleIdx % padTypes.length] ?? padTypes[0])();
+        break;
+      }
+
+      case 'FX Presets': {
+        const fxPresetTypes: Array<() => void> = [
+          () => { // Vocal Chop
+            const filter = new Tone.Filter({ frequency: 800, type: 'bandpass', Q: 8 }).connect(this.masterGain);
+            const rev = new Tone.Reverb({ decay: 1, wet: 0.3 }).connect(this.masterGain);
+            filter.connect(rev);
+            const s = new Tone.Synth({ oscillator: { type: 'sine' as const }, envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.1 } }).connect(filter);
+            s.triggerAttackRelease('A4', '8n', now, 0.6);
+            setTimeout(() => { s.dispose(); filter.dispose(); rev.dispose(); }, 800);
+          },
+          () => { // Riser
+            const rev = new Tone.Reverb({ decay: 3, wet: 0.4 }).connect(this.masterGain);
+            const filter = new Tone.AutoFilter({ frequency: 0.25, baseFrequency: 200, octaves: 6 }).connect(rev);
+            const s = new Tone.Synth({ oscillator: { type: 'sawtooth' as const }, envelope: { attack: 0.5, decay: 0.1, sustain: 0.9, release: 0.5 } }).connect(filter);
+            filter.start(now);
+            s.triggerAttackRelease('C3', '2n', now, 0.5);
+            setTimeout(() => { s.dispose(); filter.stop(); filter.dispose(); rev.dispose(); }, 2500);
+          },
+          () => { // Drop Bass
+            const s = new Tone.Synth({ oscillator: { type: 'sine' as const }, envelope: { attack: 0.001, decay: 0.6, sustain: 0, release: 0.4 } }).connect(this.masterGain);
+            s.triggerAttackRelease('C1', '2n', now, 0.9);
+            setTimeout(() => s.dispose(), 2000);
+          },
+          () => { // Impact Hit
+            const dist = new Tone.Distortion(0.4).connect(this.masterGain);
+            const s = new Tone.Synth({ oscillator: { type: 'sine' as const }, envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.3 } }).connect(dist);
+            s.triggerAttackRelease('C0', '8n', now, 1.0);
+            setTimeout(() => { s.dispose(); dist.dispose(); }, 1500);
+          },
+        ];
+        (fxPresetTypes[sampleIdx % fxPresetTypes.length] ?? fxPresetTypes[0])();
+        break;
+      }
+
       default: {
         const def = new Tone.Synth({
           oscillator: { type: 'triangle' as const },
