@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useMemo,
 } from 'react';
+import * as Tone from 'tone';
 import { useProjectStore } from '../../store/useProjectStore';
 import { midiToNoteName } from '../../utils/musicTheory';
 import type { Note } from '../../types';
@@ -87,7 +88,7 @@ interface ContextMenuState {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClose, embedded = false }) => {
-  const { project, addNote, removeNote, updateNote, currentStep } = useProjectStore();
+  const { project, addNote, removeNote, updateNote, isPlaying } = useProjectStore();
 
   const track = project.tracks.find(t => t.id === trackId);
   const pattern = track?.patterns.find(p => p.id === patternId);
@@ -136,7 +137,35 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
   const rowHeight = SEMITONE_HEIGHT * vZoom;
   const gridWidth = (pattern?.steps ?? 16) * STEPS_PER_BAR * stepWidth;
   const gridHeight = TOTAL_SEMITONES * rowHeight;
-  const playheadX = currentStep * stepWidth;
+
+  // RAF-based playhead — avoids re-rendering on every step tick
+  const playheadRulerRef = useRef<SVGLineElement | null>(null);
+  const playheadGridRef = useRef<SVGLineElement | null>(null);
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      if (playheadRulerRef.current) { playheadRulerRef.current.setAttribute('x1', '-2'); playheadRulerRef.current.setAttribute('x2', '-2'); }
+      if (playheadGridRef.current)  { playheadGridRef.current.setAttribute('x1', '-2');  playheadGridRef.current.setAttribute('x2', '-2'); }
+      return;
+    }
+    const totalSteps = (pattern?.steps ?? 16) * STEPS_PER_BAR;
+    const tick = () => {
+      const transport = Tone.getTransport();
+      const bpm = transport.bpm.value;
+      const stepSec = 60 / bpm / 4;
+      const totalDuration = totalSteps * stepSec;
+      const pos = totalDuration > 0 ? (transport.seconds % totalDuration) / totalDuration : 0;
+      const x = pos * gridWidth;
+      const xs = String(x);
+      if (playheadRulerRef.current) { playheadRulerRef.current.setAttribute('x1', xs); playheadRulerRef.current.setAttribute('x2', xs); }
+      if (playheadGridRef.current)  { playheadGridRef.current.setAttribute('x1', xs);  playheadGridRef.current.setAttribute('x2', xs); }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, pattern?.steps, gridWidth]);
 
   // Scroll to middle C on mount
   useEffect(() => {
@@ -928,9 +957,10 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
               <svg width={gridWidth} height={28}>
                 {renderRuler()}
                 <line
-                  x1={playheadX}
+                  ref={playheadRulerRef}
+                  x1={-2}
                   y1={0}
-                  x2={playheadX}
+                  x2={-2}
                   y2={28}
                   stroke="white"
                   strokeWidth={1.5}
@@ -980,9 +1010,10 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
                 )}
                 {/* Playhead */}
                 <line
-                  x1={playheadX}
+                  ref={playheadGridRef}
+                  x1={-2}
                   y1={0}
-                  x2={playheadX}
+                  x2={-2}
                   y2={gridHeight}
                   stroke="white"
                   strokeWidth={1.5}
