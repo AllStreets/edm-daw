@@ -15,7 +15,7 @@ export interface Pattern {
   name: string;
   steps: number; // 16 or 32
   notes: Note[]; // For piano roll / melodic content
-  stepData: boolean[][]; // [trackRow][step] for drum sequencer (8 x 32)
+  stepData: number[][]; // [trackRow][step] for drum sequencer; 0=off, 1-127=velocity
   color: string;
 }
 
@@ -332,7 +332,7 @@ export function defaultPattern(overrides?: Partial<Pattern>): Pattern {
     name: 'Pattern 1',
     steps: 16,
     notes: [],
-    stepData: Array.from({ length: 16 }, () => Array(32).fill(false)),
+    stepData: Array.from({ length: 16 }, () => Array(32).fill(0)),
     color: '#9945ff',
     ...overrides,
   };

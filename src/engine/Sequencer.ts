@@ -29,8 +29,11 @@ export class Sequencer {
         // Trigger drum voices if drum machine provided
         if (drumMachine) {
           pattern.stepData.forEach((row, drumIndex) => {
-            if (row[s]) {
-              drumMachine.triggerDrum(drumIndex, time, 0.85);
+            const vel = row[s];
+            if (vel) {
+              // vel is 1-127; handle legacy coercion (boolean true = 1 → use default 100)
+              const normVel = vel > 1 ? vel / 127 : 100 / 127;
+              drumMachine.triggerDrum(drumIndex, time, normVel);
             }
           });
         }

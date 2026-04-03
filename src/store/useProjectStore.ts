@@ -164,6 +164,7 @@ interface ProjectState {
   addPattern: (trackId: string) => void;
   updatePattern: (trackId: string, patternId: string, changes: Partial<Pattern>) => void;
   toggleStep: (trackId: string, patternId: string, drumRow: number, step: number) => void;
+  setStepVelocity: (trackId: string, patternId: string, drumRow: number, step: number, velocity: number) => void;
   addNote: (trackId: string, patternId: string, note: Note) => void;
   removeNote: (trackId: string, patternId: string, noteId: string) => void;
   updateNote: (trackId: string, patternId: string, noteId: string, changes: Partial<Note>) => void;
@@ -586,9 +587,10 @@ export const useProjectStore = create<ProjectState>()(
         const pattern = track.patterns.find(p => p.id === patternId);
         if (!pattern) return;
         if (!pattern.stepData[drumRow]) {
-          pattern.stepData[drumRow] = Array(32).fill(false);
+          pattern.stepData[drumRow] = Array(32).fill(0);
         }
-        pattern.stepData[drumRow][step] = !pattern.stepData[drumRow][step];
+        const current = pattern.stepData[drumRow][step] ?? 0;
+        pattern.stepData[drumRow][step] = current > 0 ? 0 : 100; // toggle off/on at velocity 100
         draft.project.modifiedAt = new Date().toISOString();
       });
       // Hot-reload drum sequencer with updated pattern while playing (any track type)
@@ -599,6 +601,16 @@ export const useProjectStore = create<ProjectState>()(
           audioEngine.createDrumSequencer(trackId, pattern, (s) => get().setCurrentStep(s));
         }
       }
+    },
+
+    setStepVelocity(trackId, patternId, drumRow, step, velocity) {
+      set(draft => {
+        const pattern = draft.project.tracks.find(t => t.id === trackId)?.patterns.find(p => p.id === patternId);
+        if (!pattern) return;
+        if (!pattern.stepData[drumRow]) pattern.stepData[drumRow] = Array(32).fill(0);
+        pattern.stepData[drumRow][step] = Math.max(1, Math.min(127, Math.round(velocity)));
+        draft.project.modifiedAt = new Date().toISOString();
+      });
     },
 
     addNote(trackId, patternId, note) {
