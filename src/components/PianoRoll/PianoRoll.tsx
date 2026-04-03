@@ -8,7 +8,7 @@ import React, {
 import * as Tone from 'tone';
 import { useProjectStore } from '../../store/useProjectStore';
 import { midiToNoteName } from '../../utils/musicTheory';
-import type { Note } from '../../types';
+import type { Note, AutomationLane, AutomationParameter } from '../../types';
 
 // ─── Platform Detection ──────────────────────────────────────────────────────
 const IS_MAC = typeof navigator !== 'undefined'
@@ -87,12 +87,90 @@ interface ContextMenuState {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+// ─── Automation Lane View ──────────────────────────────────────────────────────
+
+const AUTO_PARAM_LABELS: Record<AutomationParameter, string> = {
+  volume: 'Volume', pan: 'Pan', filterCutoff: 'Filter Cutoff',
+  filterResonance: 'Filter Res', reverbWet: 'Reverb', delayWet: 'Delay', pitch: 'Pitch',
+};
+const ALL_AUTO_PARAMS: AutomationParameter[] = ['volume','pan','filterCutoff','filterResonance','reverbWet','delayWet','pitch'];
+
+interface LaneViewProps {
+  lane: AutomationLane;
+  totalSteps: number;
+  label: string;
+  trackColor: string;
+  onRemove: () => void;
+  onSetPoint: (step: number, value: number) => void;
+  onRemovePoint: (step: number) => void;
+}
+
+const AutomationLaneView: React.FC<LaneViewProps> = ({
+  lane, totalSteps, label, trackColor, onRemove, onSetPoint, onRemovePoint
+}) => {
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const step = Math.floor((x / rect.width) * totalSteps);
+    const value = 1 - y / rect.height;
+    if (e.button === 2) { onRemovePoint(step); return; }
+    onSetPoint(step, Math.max(0, Math.min(1, value)));
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'stretch', borderTop: '1px solid #1a1a2e' }}>
+      <div style={{ width: 80, padding: '0 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#0a0a14', flexShrink: 0 }}>
+        <span style={{ fontSize: 9, color: trackColor }}>{label}</span>
+        <button onClick={onRemove} style={{ background: 'none', border: 'none', color: '#333', cursor: 'pointer', fontSize: 10 }}>✕</button>
+      </div>
+      <div
+        style={{ flex: 1, height: 60, position: 'relative', background: '#0a0a12', cursor: 'crosshair' }}
+        onClick={handleClick}
+        onContextMenu={e => { e.preventDefault(); handleClick(e); }}
+      >
+        {Array.from({ length: totalSteps }, (_, i) => (
+          <div key={i} style={{
+            position: 'absolute', top: 0, bottom: 0,
+            left: `${(i / totalSteps) * 100}%`,
+            width: 1, background: i % 4 === 0 ? '#1a1a2e' : '#0f0f18',
+          }} />
+        ))}
+        <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} preserveAspectRatio="none">
+          {lane.points.length > 1 && (
+            <polyline
+              points={lane.points.map(p =>
+                `${(p.step / totalSteps) * 100},${(1 - p.value) * 60}`
+              ).join(' ')}
+              fill="none" stroke={trackColor} strokeWidth="1.5" opacity="0.7"
+            />
+          )}
+          {lane.points.map(p => (
+            <circle
+              key={p.step}
+              cx={`${(p.step / totalSteps) * 100}%`}
+              cy={`${(1 - p.value) * 100}%`}
+              r="4" fill={trackColor}
+            />
+          ))}
+        </svg>
+      </div>
+    </div>
+  );
+};
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClose, embedded = false }) => {
-  const { project, addNote, removeNote, updateNote, isPlaying } = useProjectStore();
+  const { project, addNote, removeNote, updateNote, isPlaying,
+    addAutomationLane, removeAutomationLane, setAutomationPoint, removeAutomationPoint } = useProjectStore();
 
   const track = project.tracks.find(t => t.id === trackId);
   const pattern = track?.patterns.find(p => p.id === patternId);
   const notes: Note[] = pattern?.notes ?? [];
+
+  const automation = pattern?.automation ?? [];
+  const [showAutoParams, setShowAutoParams] = useState(false);
 
   // ── View state ──────────────────────────────────────────────────────────────
   const [hZoom, setHZoom] = useState(1);
@@ -1054,6 +1132,50 @@ export const PianoRoll: React.FC<PianoRollProps> = ({ trackId, patternId, onClos
           </div>
         </div>
       </div>
+
+      {/* Automation section */}
+      {pattern && track && (
+        <div style={{ borderTop: '1px solid #9945ff33', background: '#080818' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px' }}>
+            <span style={{ fontSize: 9, color: '#9945ff', letterSpacing: 2, fontWeight: 700 }}>AUTOMATION</span>
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowAutoParams(v => !v)}
+                style={{ fontSize: 9, padding: '2px 6px', background: '#9945ff22', border: '1px solid #9945ff44', borderRadius: 4, color: '#9945ff', cursor: 'pointer' }}
+              >
+                + Add Lane
+              </button>
+              {showAutoParams && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, background: '#1a1a30', border: '1px solid #2a2a4a', borderRadius: 6, zIndex: 100, overflow: 'hidden' }}>
+                  {ALL_AUTO_PARAMS.filter(p => !automation.find(l => l.parameter === p)).map(param => (
+                    <button
+                      key={param}
+                      onClick={() => { addAutomationLane(track.id, pattern.id, param); setShowAutoParams(false); }}
+                      style={{ display: 'block', width: '100%', padding: '5px 12px', background: 'none', border: 'none', color: '#ccc', fontSize: 11, textAlign: 'left', cursor: 'pointer' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#9945ff22'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none'; }}
+                    >
+                      {AUTO_PARAM_LABELS[param]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          {automation.map(lane => (
+            <AutomationLaneView
+              key={lane.id}
+              lane={lane}
+              totalSteps={pattern.steps}
+              label={AUTO_PARAM_LABELS[lane.parameter]}
+              trackColor={track.color}
+              onRemove={() => removeAutomationLane(track.id, pattern.id, lane.id)}
+              onSetPoint={(step, value) => setAutomationPoint(track.id, pattern.id, lane.id, step, value)}
+              onRemovePoint={(step) => removeAutomationPoint(track.id, pattern.id, lane.id, step)}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Context menu */}
       {contextMenu && (
