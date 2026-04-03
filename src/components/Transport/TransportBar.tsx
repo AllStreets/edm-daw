@@ -315,10 +315,9 @@ const ViewSwitcher: React.FC<ViewSwitcherProps> = ({ active, onChange }) => {
 // ─── Main TransportBar ────────────────────────────────────────────────────────
 
 export const TransportBar: React.FC = () => {
-  const { project, isPlaying, isRecording, loopEnabled, currentStep, play, stop, pause, startRecording, stopRecording, toggleLoop, setBPM, setActiveView, activeView, setMasterVolume } =
+  const { project, isPlaying, isRecording, loopEnabled, currentStep, play, stop, pause, startRecording, stopRecording, toggleLoop, setBPM, setActiveView, activeView, setMasterVolume, sidechainEnabled, swingAmount, setSwingAmount } =
     useProjectStore();
   const { setActivePanel, activePanel, setBottomPanelTab } = useUIStore();
-  const { sidechainEnabled } = useProjectStore();
   const [showSidechainPanel, setShowSidechainPanel] = useState(false);
 
   // Real-time elapsed counter driven by Tone.js transport seconds
@@ -515,6 +514,20 @@ export const TransportBar: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
           <div style={{ fontSize: 9, color: '#555', letterSpacing: 2, textTransform: 'uppercase' }}>BPM</div>
           <BPMControl bpm={project.bpm} onSetBPM={setBPM} />
+        </div>
+
+        {/* ── Swing ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, minWidth: 64 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+            <span style={{ fontSize: 9, color: '#555', letterSpacing: 1 }}>SWING</span>
+            <span style={{ fontSize: 9, color: swingAmount > 0 ? '#9945ff' : '#555' }}>{swingAmount}%</span>
+          </div>
+          <input
+            type="range" min={0} max={100} value={swingAmount}
+            onChange={e => setSwingAmount(Number(e.target.value))}
+            style={{ width: 64, accentColor: '#9945ff', cursor: 'pointer' }}
+            title={`Swing: ${swingAmount}% — delays odd 16th notes`}
+          />
         </div>
 
         {/* ── Time Signature ── */}

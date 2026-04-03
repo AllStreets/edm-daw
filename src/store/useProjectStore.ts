@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
+import * as Tone from 'tone';
 import type {
   Project,
   Track,
@@ -142,6 +143,9 @@ interface ProjectState {
   setSidechainSource: (trackId: string | null) => void;
   toggleSidechainTarget: (trackId: string) => void;
 
+  swingAmount: number;
+  setSwingAmount: (amount: number) => void;
+
   setBPM: (bpm: number) => void;
   play: () => Promise<void>;
   stop: () => void;
@@ -214,6 +218,7 @@ export const useProjectStore = create<ProjectState>()(
     sidechainRelease: 150,
     sidechainSourceTrackId: null,
     sidechainTargetOverrides: {},
+    swingAmount: 0,
     isPlaying: false,
     isRecording: false,
     loopEnabled: false,
@@ -342,6 +347,10 @@ export const useProjectStore = create<ProjectState>()(
       });
     },
 
+    setSwingAmount(amount) {
+      set(draft => { draft.swingAmount = amount; });
+    },
+
     setBPM(bpm) {
       set(draft => {
         draft.project.bpm = bpm;
@@ -407,6 +416,11 @@ export const useProjectStore = create<ProjectState>()(
 
       audioEngine.setBPM(project.bpm);
 
+      // Apply swing
+      const { swingAmount } = get();
+      Tone.getTransport().swingSubdivision = '16n';
+      Tone.getTransport().swing = swingAmount / 100;
+
       // Auto-sidechain setup
       const { sidechainEnabled, sidechainAmount, sidechainRelease,
               sidechainSourceTrackId, sidechainTargetOverrides } = get();
@@ -435,6 +449,7 @@ export const useProjectStore = create<ProjectState>()(
         audioEngine.stopDrumSequencer(track.id);
         audioEngine.stopMelodicSequencer(track.id);
       }
+      Tone.getTransport().swing = 0;
       audioEngine.stop();
       set(draft => {
         draft.isPlaying = false;
