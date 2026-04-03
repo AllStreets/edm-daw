@@ -261,6 +261,7 @@ export const SessionView: React.FC = () => {
     updateSynthSettings,
     updateScene,
     reorderScenes,
+    generateClipVariation,
   } = useProjectStore();
 
   const { openSynthEditor, openPianoRoll } = useUIStore();
@@ -738,6 +739,7 @@ export const SessionView: React.FC = () => {
                       onDelete={() => {
                         assignClipToScene(scene.id, track.id, null);
                       }}
+                      onGenerateVariation={(howDifferent) => generateClipVariation(track.id, scene.id, howDifferent)}
                     />
                   );
                 })}

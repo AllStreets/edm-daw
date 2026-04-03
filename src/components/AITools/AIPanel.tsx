@@ -426,7 +426,7 @@ export function AIPanel() {
     project, selectedTrackId,
     updateSynthSettings, toggleStep,
     addNote, setBPM, stop, isPlaying, launchScene,
-    assignClipToScene, addNamedScene, addPatternToTrack, removeScene,
+    assignClipToScene, addNamedScene, addPatternToTrack, removeScene, setGeneratedSong,
   } = useProjectStore();
 
 
@@ -714,6 +714,7 @@ export function AIPanel() {
         }
 
         setSongResult(result);
+        setGeneratedSong(result);
         // Dispose all accumulated Tone.js audio state so the next song starts clean
         audioEngine.resetTracks();
         // Small delay to let state settle before launching

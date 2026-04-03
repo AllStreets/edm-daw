@@ -652,6 +652,14 @@ export async function composeSection(
   try { parsed = JSON.parse(jsonStr) as Record<string, unknown>; }
   catch { throw new Error(`Composer returned invalid JSON for section "${section.name}"`); }
 
+  return parseComposerResponse(parsed, section, assignedLeadPreset);
+}
+
+function parseComposerResponse(
+  parsed: Record<string, unknown>,
+  section: SongSection,
+  assignedLeadPreset: string,
+): SectionPatterns {
   const VALID_PRESETS_LEAD = ['Supersaw','Acid Lead','FM Bell','Reese Screech','Pluck','Distorted Square'];
   const VALID_PRESETS_BASS = ['Reese Bass','FM Bass','Distorted Bass','Sub Bass','Wobble Bass','Portamento Bass'];
   const VALID_PRESETS_PAD  = ['Choir Pad','Lush Pad','Dark Pad','String Pad'];
@@ -714,6 +722,43 @@ export async function composeSection(
       reverseSweep: coerceDrum16('reverseSweep'),
     },
   };
+}
+
+export async function generateVariation(
+  apiKey: string,
+  model: string,
+  plan: SongPlan,
+  section: SongSection,
+  sectionIdx: number,
+  existingPatterns: SectionPatterns,
+  howDifferent: number,
+  onProgress: (text: string) => void,
+): Promise<SectionPatterns> {
+  const instructions =
+    howDifferent < 30
+      ? 'Make SUBTLE variations only — change rhythmic timing and velocities slightly. Keep the same melody contour and notes mostly intact.'
+      : howDifferent < 70
+      ? 'Rewrite the melody with different notes but preserve the overall energy, density, and feel. Same key and scale.'
+      : 'Fully recompose this section. Only the key, scale, and energy level must be preserved. Everything else is free.';
+
+  const basePrompt = buildComposerPrompt(plan, section, sectionIdx, existingPatterns.leadPreset);
+  const variationPrompt = basePrompt + `\n\nVARIATION INSTRUCTIONS: ${instructions}\n\nExisting lead notes for reference: ${JSON.stringify(existingPatterns.lead.notes.slice(0, 8))}`;
+
+  onProgress('Generating variation...');
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+  const message = await withRetry(() => client.messages.create({
+    model,
+    max_tokens: 4096,
+    messages: [{ role: 'user', content: variationPrompt }],
+  }));
+
+  const rawText = message.content.filter((c): c is Anthropic.TextBlock => c.type === 'text').map(c => c.text).join('');
+  const jsonStr = extractJson(rawText.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim());
+  if (!jsonStr) throw new Error('Variation returned no JSON');
+  let parsed: Record<string, unknown>;
+  try { parsed = JSON.parse(jsonStr) as Record<string, unknown>; } catch { throw new Error('Variation returned invalid JSON'); }
+
+  return parseComposerResponse(parsed, section, existingPatterns.leadPreset);
 }
 
 // ─── Main V2 entry point ───────────────────────────────────────────────────

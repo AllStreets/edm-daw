@@ -21,6 +21,7 @@ interface ClipCellProps {
   onDuplicate?: () => void;
   onDelete?: () => void;
   onSampleDrop?: (data: SampleDropData) => void;
+  onGenerateVariation?: (howDifferent: number) => void;
 }
 
 // ─── Mini Waveform (fake animated bars) ──────────────────────────────────────
@@ -81,6 +82,7 @@ interface ContextMenuProps {
   onEdit?: () => void;
   onDuplicate?: () => void;
   onDelete?: () => void;
+  onGenerateVariation?: () => void;
 }
 
 const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -93,6 +95,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   onEdit,
   onDuplicate,
   onDelete,
+  onGenerateVariation,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -115,6 +118,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
         { label: 'Launch', icon: '▶', action: onLaunch },
         { label: 'Stop', icon: '■', action: onStop },
         { label: 'Edit in Piano Roll', icon: '✏', action: onEdit },
+        { label: 'Generate Variation...', icon: '✦', action: onGenerateVariation },
         { label: 'Duplicate', icon: '⧉', action: onDuplicate },
         { label: 'Delete', icon: '✕', action: onDelete, danger: true },
       ]
@@ -192,12 +196,16 @@ export const ClipCell: React.FC<ClipCellProps> = ({
   onDuplicate,
   onDelete,
   onSampleDrop,
+  onGenerateVariation,
 }) => {
   const hasClip = patternId !== null;
   const [hovered, setHovered] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [pulsePhase, setPulsePhase] = useState(0);
+  const [showVariation, setShowVariation] = useState(false);
+  const [howDifferent, setHowDifferent] = useState(50);
+  const cellRef = useRef<HTMLDivElement>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types.includes('application/x-daw-sample')) {
@@ -251,6 +259,7 @@ export const ClipCell: React.FC<ClipCellProps> = ({
   return (
     <>
       <div
+        ref={cellRef}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         onMouseEnter={() => setHovered(true)}
@@ -404,8 +413,53 @@ export const ClipCell: React.FC<ClipCellProps> = ({
           onEdit={onEdit}
           onDuplicate={onDuplicate}
           onDelete={onDelete}
+          onGenerateVariation={onGenerateVariation ? () => { setContextMenu(null); setShowVariation(true); } : undefined}
         />
       )}
+
+      {showVariation && cellRef.current && (() => {
+        const rect = cellRef.current!.getBoundingClientRect();
+        return (
+          <div style={{
+            position: 'fixed',
+            top: rect.bottom + 4,
+            left: rect.left,
+            background: '#1a1a30',
+            border: '1px solid #9945ff44',
+            borderRadius: 8,
+            padding: 12,
+            zIndex: 9999,
+            width: 180,
+          }}>
+            <div style={{ fontSize: 10, color: '#aaa', marginBottom: 8 }}>How different?</div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={howDifferent}
+              onChange={e => setHowDifferent(Number(e.target.value))}
+              style={{ width: '100%', marginBottom: 6 }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#555', marginBottom: 8 }}>
+              <span>Subtle</span><span>Full rewrite</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                onClick={() => { onGenerateVariation?.(howDifferent); setShowVariation(false); }}
+                style={{ flex: 1, background: '#9945ff33', border: '1px solid #9945ff66', borderRadius: 4, color: '#9945ff', fontSize: 10, padding: '4px 0', cursor: 'pointer' }}
+              >
+                Generate
+              </button>
+              <button
+                onClick={() => setShowVariation(false)}
+                style={{ background: '#1a1a2e', border: '1px solid #2a2a4a', borderRadius: 4, color: '#555', fontSize: 10, padding: '4px 8px', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       <style>{`
         @keyframes clip-scan {

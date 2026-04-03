@@ -13,6 +13,7 @@ import type {
   TrackFXType,
   TrackFXSettings,
 } from '../types';
+import type { GeneratedSongV2 } from '../services/ClaudeSongGenerator';
 import {
   defaultTrack,
   defaultPattern,
@@ -146,6 +147,10 @@ interface ProjectState {
   swingAmount: number;
   setSwingAmount: (amount: number) => void;
 
+  generatedSong: GeneratedSongV2 | null;
+  setGeneratedSong: (song: GeneratedSongV2 | null) => void;
+  generateClipVariation: (trackId: string, sceneId: string, howDifferent: number) => Promise<void>;
+
   exportSong: (onProgress: (msg: string) => void) => Promise<void>;
 
   setBPM: (bpm: number) => void;
@@ -221,6 +226,7 @@ export const useProjectStore = create<ProjectState>()(
     sidechainSourceTrackId: null,
     sidechainTargetOverrides: {},
     swingAmount: 0,
+    generatedSong: null,
     isPlaying: false,
     isRecording: false,
     loopEnabled: false,
@@ -351,6 +357,53 @@ export const useProjectStore = create<ProjectState>()(
 
     setSwingAmount(amount) {
       set(draft => { draft.swingAmount = amount; });
+    },
+
+    setGeneratedSong(song) {
+      set(draft => { draft.generatedSong = song; });
+    },
+
+    async generateClipVariation(trackId, sceneId, howDifferent) {
+      const { project, generatedSong } = get();
+      if (!generatedSong) return;
+
+      const scene = project.scenes.find(s => s.id === sceneId);
+      const clipId = scene?.clips[trackId];
+      const track = project.tracks.find(t => t.id === trackId);
+      const pattern = track?.patterns.find(p => p.id === clipId);
+      if (!pattern) return;
+
+      const sectionIdx = generatedSong.sections.findIndex(s => s.name === scene?.name);
+      const sectionData = generatedSong.sections[sectionIdx >= 0 ? sectionIdx : 0];
+      const section = generatedSong.plan.sections[sectionIdx >= 0 ? sectionIdx : 0];
+      if (!sectionData || !section) return;
+
+      const apiKey = localStorage.getItem('claude_api_key') ?? '';
+      const model = localStorage.getItem('claude_model') ?? 'claude-sonnet-4-5';
+      if (!apiKey) return;
+
+      const { generateVariation } = await import('../services/ClaudeSongGenerator');
+      const varied = await generateVariation(
+        apiKey, model,
+        generatedSong.plan, section, sectionIdx >= 0 ? sectionIdx : 0,
+        sectionData.patterns, howDifferent,
+        () => {},
+      );
+
+      get()._pushUndo();
+      set(draft => {
+        const t = draft.project.tracks.find(t => t.id === trackId);
+        const p = t?.patterns.find(p => p.id === clipId);
+        if (p) {
+          p.notes = varied.lead.notes.map(n => ({
+            id: crypto.randomUUID(),
+            pitch: n.pitch,
+            startStep: n.startStep,
+            duration: n.duration,
+            velocity: n.velocity,
+          }));
+        }
+      });
     },
 
     async exportSong(onProgress) {
