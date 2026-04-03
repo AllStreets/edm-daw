@@ -88,6 +88,12 @@ class AudioEngine {
 
   async start(): Promise<void> {
     await Tone.start();
+    // Belt-and-suspenders: explicitly resume the raw AudioContext if it is still
+    // suspended (browser inactivity / tab-switch can re-suspend it even after Tone.start())
+    const rawCtx = Tone.getContext().rawContext as AudioContext;
+    if (rawCtx.state !== 'running') {
+      try { await rawCtx.resume(); } catch { /* ignore */ }
+    }
     this.initialize();
     // Small lookahead gives scheduler breathing room without pre-committing too many notes
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -287,15 +293,20 @@ class AudioEngine {
   // ── Per-track FX chain ──────────────────────────────────────────────────────
 
   private rebuildFxChain(track: TrackAudio, effects: TrackEffect[]): void {
-    // Dispose existing fx nodes
+    // Disconnect fxBus from panner and each existing fx node individually.
+    // Do NOT call fxBus.disconnect() with no arguments — that kills ALL outputs
+    // including any sidechain gain node that may be inserted by setupSidechain().
+    try { track.fxBus.disconnect(track.panner); } catch { /* ignore */ }
+    track.fxNodes.forEach((node, _id) => {
+      try { track.fxBus.disconnect(node); } catch { /* ignore */ }
+    });
+
+    // Dispose existing fx nodes after disconnecting
     track.fxNodes.forEach(node => {
       try { node.disconnect(); } catch { /* ignore */ }
       try { (node as Tone.ToneAudioNode).dispose(); } catch { /* ignore */ }
     });
     track.fxNodes.clear();
-
-    // Disconnect fxBus from everything downstream temporarily
-    try { track.fxBus.disconnect(); } catch { /* ignore */ }
 
     const activeEffects = effects.filter(e => e.on);
     if (activeEffects.length === 0) {
@@ -505,9 +516,17 @@ class AudioEngine {
       return new Blob([], { type: 'audio/webm' });
     }
     const blob = await this.recorder.stop();
-    try { this.masterLimiter.disconnect(this.recorder); } catch { /* ignore */ }
+    // Dispose the recorder — its own dispose() handles internal disconnection.
+    // Do NOT call masterLimiter.disconnect(recorder) first: the actual connection
+    // went to recorder.input, so that call throws silently and leaves stale state
+    // in Tone.js's fan-out list, which dispose() then corrupts.
     this.recorder.dispose();
     this.recorder = null;
+    // Re-establish the limiter → destination path unconditionally.
+    // Tone.js internal bookkeeping for masterLimiter can be broken by the disposal
+    // of a node that was connected to it, so we always reconnect to be safe.
+    try { this.masterLimiter.disconnect(Tone.getDestination()); } catch { /* not connected */ }
+    this.masterLimiter.connect(Tone.getDestination());
     return blob;
   }
 
