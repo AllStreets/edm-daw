@@ -13,6 +13,7 @@ interface SceneHeaderCellProps {
   name: string;
   color: string;
   onLaunch: () => void;
+  onDelete: () => void;
   isEditing: boolean;
   editingName: string;
   onDoubleClick: () => void;
@@ -26,7 +27,7 @@ interface SceneHeaderCellProps {
 
 const SCENE_COLORS = ['#9945ff', '#00d4ff', '#ff0080', '#00ff88', '#ff6600', '#ffcc00'];
 
-const SceneHeaderCell: React.FC<SceneHeaderCellProps> = ({ name, color, onLaunch, isEditing, editingName, onDoubleClick, onNameChange, onNameCommit, onNameCancel, isDragging, isDropTarget, onDragStart }) => {
+const SceneHeaderCell: React.FC<SceneHeaderCellProps> = ({ name, color, onLaunch, onDelete, isEditing, editingName, onDoubleClick, onNameChange, onNameCommit, onNameCancel, isDragging, isDropTarget, onDragStart }) => {
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -98,38 +99,72 @@ const SceneHeaderCell: React.FC<SceneHeaderCellProps> = ({ name, color, onLaunch
           {name}
         </span>
       )}
-      <button
-        onClick={e => { e.stopPropagation(); onLaunch(); }}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: 22,
-          height: 18,
-          borderRadius: 4,
-          border: `1px solid ${color}66`,
-          background: `${color}22`,
-          color: color,
-          fontSize: 9,
-          fontWeight: 700,
-          cursor: 'pointer',
-          padding: 0,
-          flexShrink: 0,
-          transition: 'all 0.1s ease',
-          outline: 'none',
-        }}
-        onMouseEnter={e => {
-          (e.currentTarget as HTMLButtonElement).style.background = `${color}44`;
-          (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 0 8px ${color}66`;
-        }}
-        onMouseLeave={e => {
-          (e.currentTarget as HTMLButtonElement).style.background = `${color}22`;
-          (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
-        }}
-        title={`Launch scene: ${name}`}
-      >
-        ▶
-      </button>
+      <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+        <button
+          onClick={e => { e.stopPropagation(); onLaunch(); }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 22,
+            height: 18,
+            borderRadius: 4,
+            border: `1px solid ${color}66`,
+            background: `${color}22`,
+            color: color,
+            fontSize: 9,
+            fontWeight: 700,
+            cursor: 'pointer',
+            padding: 0,
+            flexShrink: 0,
+            transition: 'all 0.1s ease',
+            outline: 'none',
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.background = `${color}44`;
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 0 8px ${color}66`;
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.background = `${color}22`;
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
+          }}
+          title={`Launch scene: ${name}`}
+        >
+          ▶
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); onDelete(); }}
+          style={{
+            display: hovered ? 'flex' : 'none',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 18,
+            height: 18,
+            borderRadius: 4,
+            border: '1px solid #ff335544',
+            background: '#ff335511',
+            color: '#ff5577',
+            fontSize: 9,
+            fontWeight: 700,
+            cursor: 'pointer',
+            padding: 0,
+            flexShrink: 0,
+            transition: 'all 0.1s ease',
+            outline: 'none',
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.background = '#ff335533';
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 6px #ff335566';
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.background = '#ff335511';
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
+          }}
+          title={`Delete scene: ${name}`}
+        >
+          ✕
+        </button>
+      </div>
     </div>
   );
 };
@@ -218,6 +253,7 @@ export const SessionView: React.FC = () => {
     setTrackVolume,
     addTrack,
     addScene,
+    removeScene,
     launchScene,
     isPlaying,
     assignClipToScene,
@@ -529,6 +565,7 @@ export const SessionView: React.FC = () => {
                   name={scene.name}
                   color={color}
                   onLaunch={() => launchScene(scene.id)}
+                  onDelete={() => removeScene(scene.id)}
                   isEditing={editingSceneId === scene.id}
                   editingName={editingName}
                   onDoubleClick={() => {

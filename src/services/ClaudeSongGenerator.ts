@@ -393,6 +393,7 @@ function coerceTrackV2(
   pitchMin: number,
   pitchMax: number,
   maxSteps?: number,
+  minDuration = 1,
 ): { oscType: 'sawtooth' | 'square' | 'sine' | 'triangle'; notes: Array<{ pitch: number; startStep: number; duration: number; velocity: number }> } | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
@@ -403,12 +404,12 @@ function coerceTrackV2(
     .filter(n => typeof n === 'object' && n !== null)
     .map(n => {
       const startStep = Math.max(0, Math.min(maxSteps != null ? maxSteps - 1 : 32767, Math.round(Number(n.startStep ?? 0))));
-      const rawDur    = Math.max(1, Math.round(Number(n.duration ?? 1)));
+      const rawDur    = Math.max(minDuration, Math.round(Number(n.duration ?? minDuration)));
       const duration  = maxSteps != null ? Math.min(rawDur, maxSteps - startStep) : rawDur;
       return {
         pitch:     Math.max(pitchMin, Math.min(pitchMax, Math.round(Number(n.pitch ?? 60)))),
         startStep,
-        duration:  Math.max(1, duration),
+        duration:  Math.max(minDuration, duration),
         velocity:  Math.max(1, Math.min(127, Math.round(Number(n.velocity ?? 80)))),
       };
     });
@@ -471,7 +472,12 @@ Rules:
 - bars MUST be 8 or 16 — never 4, never 32. Short transitions (Riser, Pre-Drop) = 8 bars. Drops and Breakdowns = 16 bars. Intro/Outro = 8 or 16.
 - energy "low" = sparse/intro/breakdown, "medium" = building, "high"/"peak" = full drops, "rising" = riser tension, "fading" = outro
 - TARGET DURATION: aim for total song length 90–240 seconds. At bpm X: each bar ≈ ${240}/X seconds. Sum all section bars and multiply to verify duration >= 90s.
-- For aggressive vibe: include Impact/Drop moments; for calm: fewer sections, longer bars`;
+- For aggressive vibe: include Impact/Drop moments; for calm: fewer sections, longer bars
+- ENERGY FLOW RULES (CRITICAL — never violate):
+  * A Breakdown (energy=low) must NEVER be immediately followed by a Drop (energy=peak/high). Always insert a Build or Riser between them.
+  * Correct pattern: Intro → Build → Drop → Breakdown → Build → Drop → Outro
+  * WRONG pattern: Intro → Build → Drop → Breakdown → Drop (no build after breakdown — forbidden)
+  * Energy must build progressively to every drop: low/medium → rising → high/peak. Never jump from low directly to peak.`;
 }
 
 const SongPlanSchema = z.object({
@@ -567,17 +573,20 @@ const PRESET_HINTS: Record<Vibe, { lead: string; bass: string; pad: string }> = 
   neutral:    { lead: 'Supersaw or Pluck',                 bass: 'Reese Bass or FM Bass',         pad: 'Lush Pad or String Pad' },
 };
 
-function buildComposerPrompt(plan: SongPlan, section: SongSection): string {
+function buildComposerPrompt(plan: SongPlan, section: SongSection, sectionIdx: number, assignedLeadPreset: string): string {
   const steps = section.bars * 16;
   const presetHint = PRESET_HINTS[plan.vibe];
   return `You are a professional EDM producer. Output ONLY valid JSON — no markdown, no explanation.
 
 Song context: key=${plan.key}, scale=${plan.scale}, bpm=${plan.bpm}, vibe=${plan.vibe}
-Section: "${section.name}", ${section.bars} bars (${steps} steps total), energy=${section.energy}
+Section ${sectionIdx + 1}: "${section.name}", ${section.bars} bars (${steps} steps total), energy=${section.energy}
 
 VIBE RULES: ${VIBE_COMPOSER_HINTS[plan.vibe]}
 ENERGY RULES: ${ENERGY_DRUM_HINTS[section.energy]}
-Preset hints: lead="${presetHint.lead}", bass="${presetHint.bass}", pad="${presetHint.pad}"
+
+LEAD PRESET ASSIGNMENT (MANDATORY): You MUST set leadPreset="${assignedLeadPreset}" — do not use any other lead preset.
+Each section in this song uses a DIFFERENT lead preset to ensure sonic variety. Honour this assignment exactly.
+bass hint: "${presetHint.bass}", pad hint: "${presetHint.pad}"
 
 MIDI PITCHES: Bass(36-55): C2=36 D2=38 E2=40 F2=41 G2=43 A2=45 B2=47 C3=48 D3=50 E3=52 G3=55
               Lead(60-84): C4=60 D4=62 E4=64 F4=65 G4=67 A4=69 B4=71 C5=72 D5=74 E5=76 G5=79
@@ -588,12 +597,12 @@ DRUM ROWS: row0=kick row1=snare row2=clap row3=hihat row4=openHihat row5=tom row
 
 Output this exact JSON:
 {
-  "leadPreset": <one of: "Supersaw","Acid Lead","FM Bell","Reese Screech","Pluck","Distorted Square">,
+  "leadPreset": "${assignedLeadPreset}",
   "bassPreset": <one of: "Reese Bass","FM Bass","Distorted Bass","Sub Bass","Wobble Bass","Portamento Bass">,
   "padPreset":  <one of: "Choir Pad","Lush Pad","Dark Pad","String Pad">,
   "lead": { "oscType": <"sawtooth"|"square"|"sine"|"triangle">, "notes": [{"pitch":<60-84>,"startStep":<0-${steps-1}>,"duration":<1-16>,"velocity":<40-127>},...] },
-  "bass": { "oscType": <"sawtooth"|"square"|"sine"|"triangle">, "notes": [{"pitch":<36-55>,"startStep":<0-${steps-1}>,"duration":<1-8>,"velocity":<40-127>},...] },
-  "pad":  { "oscType": <"sawtooth"|"square"|"sine"|"triangle">, "notes": [{"pitch":<52-76>,"startStep":<0-${steps-1}>,"duration":<4-16>,"velocity":<40-127>},...] },
+  "bass": { "oscType": <"sawtooth"|"square"|"sine">, "notes": [{"pitch":<36-55>,"startStep":<0-${steps-1}>,"duration":<4-16>,"velocity":<85-127>},...] },
+  "pad":  { "oscType": <"sawtooth"|"square"|"sine"|"triangle">, "notes": [{"pitch":<52-76>,"startStep":<0-${steps-1}>,"duration":<8-16>,"velocity":<40-90>},...] },
   "drums": {
     "kick":        [<16 true/false>], "snare":       [<16 true/false>], "clap":        [<16 true/false>],
     "hihat":       [<16 true/false>], "openHihat":   [<16 true/false>], "tom":         [<16 true/false>],
@@ -604,17 +613,21 @@ Output this exact JSON:
   }
 }
 
-Rules: No note overlaps. Notes sorted by startStep. note[i].startStep + note[i].duration <= note[i+1].startStep.
-Minimum note counts by energy:
-- lead:  low=4  medium=8  high=14 peak=16
-- bass:  low=4  medium=8  high=12 peak=16  (bass MUST be rhythmically active — never fewer than 4 notes)
-- pad:   low=2  medium=4  high=6  peak=8   (pad notes MUST have duration >= 8 steps for atmospheric sustain)`;
+Rules:
+- No note overlaps. Notes sorted by startStep. note[i].startStep + note[i].duration <= note[i+1].startStep.
+- Bass CRITICAL: duration MUST be >= 4 steps (quarter note minimum) for felt low-end. Velocity MUST be >= 85 for punch. Use pitch 36-48 (C2-C3) for sub-bass weight. At least one note per 2 bars.
+- Minimum note counts by energy:
+  lead:  low=4  medium=8  high=14 peak=16 (use VARIED rhythms — NOT just uniform 8th notes)
+  bass:  low=4  medium=6  high=10 peak=14 (bass must be HEAVY and FELT — never thin or short)
+  pad:   low=2  medium=4  high=6  peak=8  (long chords, duration 8-16 steps — atmospheric sustain)`;
 }
 
 export async function composeSection(
   apiKey: string,
   plan: SongPlan,
   section: SongSection,
+  sectionIdx: number,
+  assignedLeadPreset: string,
   model: string,
   onProgress: (text: string) => void,
 ): Promise<SectionPatterns> {
@@ -624,7 +637,7 @@ export async function composeSection(
   const message = await withRetry(() => client.messages.create({
     model,
     max_tokens: 4096,
-    messages: [{ role: 'user', content: buildComposerPrompt(plan, section) }],
+    messages: [{ role: 'user', content: buildComposerPrompt(plan, section, sectionIdx, assignedLeadPreset) }],
   }));
 
   const rawText = message.content
@@ -649,12 +662,12 @@ export async function composeSection(
   };
 
   const sectionSteps = section.bars * 16;
-  const leadTrack = coerceTrackV2(parsed.lead, 60, 84, sectionSteps);
-  const bassTrack = coerceTrackV2(parsed.bass, 36, 55, sectionSteps);
-  const padTrack  = coerceTrackV2(parsed.pad,  52, 76, sectionSteps);
+  const leadTrack = coerceTrackV2(parsed.lead, 60, 84, sectionSteps, 1);
+  const bassTrack = coerceTrackV2(parsed.bass, 36, 55, sectionSteps, 4);
+  const padTrack  = coerceTrackV2(parsed.pad,  52, 76, sectionSteps, 1);
 
   return {
-    leadPreset: VALID_PRESETS_LEAD.includes(parsed.leadPreset as string) ? (parsed.leadPreset as string) : VALID_PRESETS_LEAD[0],
+    leadPreset: VALID_PRESETS_LEAD.includes(parsed.leadPreset as string) ? (parsed.leadPreset as string) : assignedLeadPreset,
     bassPreset: VALID_PRESETS_BASS.includes(parsed.bassPreset as string) ? (parsed.bassPreset as string) : VALID_PRESETS_BASS[0],
     padPreset:  VALID_PRESETS_PAD.includes(parsed.padPreset  as string)  ? (parsed.padPreset  as string) : VALID_PRESETS_PAD[0],
     lead: (leadTrack && leadTrack.notes.length >= 1) ? leadTrack : {
@@ -669,10 +682,10 @@ export async function composeSection(
     bass: (bassTrack && bassTrack.notes.length >= 2) ? bassTrack : {
       oscType: 'sawtooth',
       notes: [
-        { pitch: 48, startStep: 0,  duration: 2, velocity: 100 },
-        { pitch: 48, startStep: 4,  duration: 2, velocity: 90  },
-        { pitch: 43, startStep: 8,  duration: 2, velocity: 95  },
-        { pitch: 45, startStep: 12, duration: 4, velocity: 92  },
+        { pitch: 48, startStep: 0,  duration: 4, velocity: 100 },
+        { pitch: 48, startStep: 8,  duration: 4, velocity: 95  },
+        { pitch: 43, startStep: 16, duration: 4, velocity: 100 },
+        { pitch: 45, startStep: 24, duration: 8, velocity: 95  },
       ],
     },
     pad: (padTrack && padTrack.notes.length >= 1) ? padTrack : {
@@ -720,8 +733,22 @@ export async function generateFullSong(
 
   const sections: GeneratedSongV2['sections'] = [];
 
-  for (const section of plan.sections) {
-    const patterns = await composeSection(apiKey, plan, section, model, text => onProgress(text, [...sectionsDone]));
+  // Rotate lead presets across sections so each one sounds different
+  const LEAD_PRESET_POOL = ['Supersaw', 'Acid Lead', 'FM Bell', 'Reese Screech', 'Pluck', 'Distorted Square'];
+  // Build a shuffled rotation that never repeats consecutively
+  const leadRotation: string[] = [];
+  let lastPreset = '';
+  for (let i = 0; i < plan.sections.length; i++) {
+    const candidates = LEAD_PRESET_POOL.filter(p => p !== lastPreset);
+    const pick = candidates[i % candidates.length];
+    leadRotation.push(pick);
+    lastPreset = pick;
+  }
+
+  for (let i = 0; i < plan.sections.length; i++) {
+    const section = plan.sections[i];
+    const assignedLeadPreset = leadRotation[i];
+    const patterns = await composeSection(apiKey, plan, section, i, assignedLeadPreset, model, text => onProgress(text, [...sectionsDone]));
     sections.push({ name: section.name, patterns });
     sectionsDone.push(section.name);
     onProgress(`${section.name} \u2713`, [...sectionsDone]);
