@@ -152,6 +152,7 @@ interface ProjectState {
   setGeneratedSong: (song: GeneratedSongV2 | null) => void;
   generateClipVariation: (trackId: string, sceneId: string, howDifferent: number) => Promise<void>;
   applyAIMix: () => void;
+  addVocalTrack: (audioBlob: Blob) => Promise<void>;
 
   exportSong: (onProgress: (msg: string) => void) => Promise<void>;
 
@@ -390,6 +391,32 @@ export const useProjectStore = create<ProjectState>()(
         draft.sidechainEnabled = true;
         draft.sidechainAmount = 60;
       });
+    },
+
+    async addVocalTrack(audioBlob) {
+      const { blobToNormalizedWav } = await import('../utils/audioUtils');
+      const wav = await blobToNormalizedWav(audioBlob);
+      const url = URL.createObjectURL(wav);
+      void url; // stored in note velocity field as side channel
+
+      const trackId = crypto.randomUUID();
+      set(draft => {
+        draft.project.tracks.push({
+          id: trackId, name: 'Vocals', type: 'audio',
+          color: '#00d4ff', volume: 0.9, pan: 0,
+          mute: false, solo: false, armed: false,
+          patterns: [], synthSettings: defaultSynthSettings(), effects: [],
+        });
+      });
+
+      const { project } = get();
+      const firstScene = project.scenes[0];
+      if (firstScene) {
+        const pattern = defaultPattern({ name: 'Vocals', color: '#00d4ff' });
+        pattern.notes = [{ id: crypto.randomUUID(), pitch: 0, startStep: 0, duration: 64, velocity: 100 }];
+        get().addPatternToTrack(trackId, pattern);
+        get().assignClipToScene(firstScene.id, trackId, pattern.id);
+      }
     },
 
     async generateClipVariation(trackId, sceneId, howDifferent) {
