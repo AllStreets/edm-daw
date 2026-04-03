@@ -12,7 +12,8 @@ export class Sequencer {
     pattern: Pattern,
     onStep: StepCallback,
     drumMachine?: DrumMachine,
-    onEnd?: () => void
+    onEnd?: () => void,
+    applyAutomation?: (param: AutomationParameter, value: number, time: number) => void,
   ): void {
     this.stop();
     this.currentStep = 0;
@@ -36,6 +37,16 @@ export class Sequencer {
               drumMachine.triggerDrum(drumIndex, time, normVel);
             }
           });
+        }
+
+        // Apply automation at this step
+        if (applyAutomation && pattern.automation) {
+          for (const lane of pattern.automation) {
+            const point = lane.points.find(pt => pt.step === s);
+            if (point !== undefined) {
+              applyAutomation(lane.parameter, point.value, time);
+            }
+          }
         }
 
         // Fire onEnd when we reach the last step

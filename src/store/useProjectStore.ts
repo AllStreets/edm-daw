@@ -437,9 +437,17 @@ export const useProjectStore = create<ProjectState>()(
       const pattern = track?.patterns.find(p => p.id === clipId);
       if (!pattern) return;
 
-      const sectionIdx = generatedSong.sections.findIndex(s => s.name === scene?.name);
-      const sectionData = generatedSong.sections[sectionIdx >= 0 ? sectionIdx : 0];
-      const section = generatedSong.plan.sections[sectionIdx >= 0 ? sectionIdx : 0];
+      const sceneName = scene?.name?.trim().toLowerCase() ?? '';
+      let sectionIdx = generatedSong.sections.findIndex(
+        s => s.name.trim().toLowerCase() === sceneName
+      );
+      // Fall back to matching by scene position in project rather than index 0
+      if (sectionIdx < 0) {
+        const scenePos = project.scenes.findIndex(s => s.id === sceneId);
+        sectionIdx = Math.min(scenePos, generatedSong.sections.length - 1);
+      }
+      const sectionData = generatedSong.sections[sectionIdx];
+      const section = generatedSong.plan.sections[sectionIdx];
       if (!sectionData || !section) return;
 
       const apiKey = localStorage.getItem('claude_api_key') ?? '';
@@ -449,7 +457,7 @@ export const useProjectStore = create<ProjectState>()(
       const { generateVariation } = await import('../services/ClaudeSongGenerator');
       const varied = await generateVariation(
         apiKey, model,
-        generatedSong.plan, section, sectionIdx >= 0 ? sectionIdx : 0,
+        generatedSong.plan, section, sectionIdx,
         sectionData.patterns, howDifferent,
         () => {},
       );

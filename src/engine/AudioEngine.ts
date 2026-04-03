@@ -457,7 +457,8 @@ class AudioEngine {
       track.drumMachine.createDrumVoices(track.gain);
     }
     if (!track.sequencer) track.sequencer = new Sequencer();
-    track.sequencer.start(pattern, onStep, track.drumMachine, () => this.fireSongEnd());
+    track.sequencer.start(pattern, onStep, track.drumMachine, () => this.fireSongEnd(),
+      (param, value, time) => this.setTrackParam(trackId, param, value, time));
   }
 
   stopDrumSequencer(trackId: string): void {
