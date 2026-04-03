@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import * as Tone from 'tone';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useUIStore } from '../../store/useUIStore';
+import { SidechainPanel } from './SidechainPanel';
 
 // ─── Tiny reusable button ────────────────────────────────────────────────────
 
@@ -317,6 +318,8 @@ export const TransportBar: React.FC = () => {
   const { project, isPlaying, isRecording, loopEnabled, currentStep, play, stop, pause, startRecording, stopRecording, toggleLoop, setBPM, setActiveView, activeView, setMasterVolume } =
     useProjectStore();
   const { setActivePanel, activePanel, setBottomPanelTab } = useUIStore();
+  const { sidechainEnabled } = useProjectStore();
+  const [showSidechainPanel, setShowSidechainPanel] = useState(false);
 
   // Real-time elapsed counter driven by Tone.js transport seconds
   const [elapsedSecs, setElapsedSecs] = useState(0);
@@ -489,7 +492,18 @@ export const TransportBar: React.FC = () => {
           >
             <span style={{ fontSize: 13 }}>↺</span>
           </IconBtn>
+
+          {/* Sidechain */}
+          <IconBtn
+            onClick={() => setShowSidechainPanel(v => !v)}
+            active={showSidechainPanel}
+            activeColor={sidechainEnabled ? '#9945ff' : '#555'}
+            title="Sidechain routing"
+          >
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5 }}>SC</span>
+          </IconBtn>
         </div>
+        {showSidechainPanel && <SidechainPanel onClose={() => setShowSidechainPanel(false)} />}
 
         {/* ── Divider ── */}
         <div style={{ width: 1, height: 30, background: '#1e1e3a', flexShrink: 0 }} />

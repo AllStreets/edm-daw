@@ -35,6 +35,12 @@ class AudioEngine {
   private onSongEnd: (() => void) | null = null;
   private songEndFired = false;
 
+  // Sidechain
+  private sidechainAnalyser: Tone.Analyser | null = null;
+  private sidechainGains: Map<string, Tone.Gain> = new Map();
+  private sidechainRaf: number | null = null;
+  private sidechainSmoothed = 1;
+
   constructor() {
     // Only create simple gain/analysis nodes in the constructor.
     // Reverb/Delay require a running AudioContext — they're created in initialize().
@@ -114,6 +120,7 @@ class AudioEngine {
     // (triggerAttackRelease futures) don't bleed into the next play.
     // The gain/panner/send routing nodes stay intact.
     this.resetTracks();
+    this.teardownSidechain();
   }
 
   /**
@@ -304,6 +311,70 @@ class AudioEngine {
   applyTrackEffects(trackId: string, effects: TrackEffect[]): void {
     const track = this.tracks.get(trackId);
     if (track) this.rebuildFxChain(track, effects);
+  }
+
+  // ── Sidechain ──────────────────────────────────────────────────────────────
+
+  setupSidechain(kickTrackId: string, targetTrackIds: string[], amount: number, release: number): void {
+    this.teardownSidechain();
+
+    const kickTrack = this.tracks.get(kickTrackId);
+    if (!kickTrack) return;
+
+    this.sidechainAnalyser = new Tone.Analyser('waveform', 128);
+    kickTrack.gain.connect(this.sidechainAnalyser);
+    this.sidechainSmoothed = 1;
+
+    // Insert a sidechain gain node into each target track after its fxBus
+    targetTrackIds.forEach(targetId => {
+      const targetTrack = this.tracks.get(targetId);
+      if (!targetTrack) return;
+      const scGain = new Tone.Gain(1);
+      try { targetTrack.fxBus.disconnect(targetTrack.panner); } catch { /* ignore */ }
+      targetTrack.fxBus.connect(scGain);
+      scGain.connect(targetTrack.panner);
+      this.sidechainGains.set(targetId, scGain);
+    });
+
+    const releaseCoeff = Math.exp(-1 / (release / 16.67));
+    const tick = () => {
+      const values = this.sidechainAnalyser!.getValue() as Float32Array;
+      let peak = 0;
+      for (let i = 0; i < values.length; i++) {
+        const abs = Math.abs(values[i]);
+        if (abs > peak) peak = abs;
+      }
+      const targetGain = peak > 0.05 ? Math.max(0.05, 1 - peak * amount * 2.5) : 1;
+      if (targetGain < this.sidechainSmoothed) {
+        this.sidechainSmoothed = targetGain;
+      } else {
+        this.sidechainSmoothed = this.sidechainSmoothed + (targetGain - this.sidechainSmoothed) * (1 - releaseCoeff);
+      }
+      this.sidechainGains.forEach(g => { g.gain.value = this.sidechainSmoothed; });
+      this.sidechainRaf = requestAnimationFrame(tick);
+    };
+    this.sidechainRaf = requestAnimationFrame(tick);
+  }
+
+  teardownSidechain(): void {
+    if (this.sidechainRaf !== null) {
+      cancelAnimationFrame(this.sidechainRaf);
+      this.sidechainRaf = null;
+    }
+    this.sidechainGains.forEach((scGain, targetId) => {
+      const targetTrack = this.tracks.get(targetId);
+      if (targetTrack) {
+        try { targetTrack.fxBus.disconnect(scGain); } catch { /* ignore */ }
+        try { scGain.disconnect(targetTrack.panner); } catch { /* ignore */ }
+        targetTrack.fxBus.connect(targetTrack.panner);
+      }
+      scGain.dispose();
+    });
+    this.sidechainGains.clear();
+    if (this.sidechainAnalyser) {
+      this.sidechainAnalyser.dispose();
+      this.sidechainAnalyser = null;
+    }
   }
 
   createSynthTrack(trackId: string, settings: SynthSettings): Tone.PolySynth {

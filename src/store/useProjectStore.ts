@@ -131,6 +131,17 @@ interface ProjectState {
   updateTrackEffect: (trackId: string, effectId: string, settings: Partial<TrackFXSettings>) => void;
   toggleTrackEffect: (trackId: string, effectId: string) => void;
 
+  sidechainEnabled: boolean;
+  sidechainAmount: number;
+  sidechainRelease: number;
+  sidechainSourceTrackId: string | null;
+  sidechainTargetOverrides: Record<string, boolean>;
+  setSidechainEnabled: (enabled: boolean) => void;
+  setSidechainAmount: (amount: number) => void;
+  setSidechainRelease: (release: number) => void;
+  setSidechainSource: (trackId: string | null) => void;
+  toggleSidechainTarget: (trackId: string) => void;
+
   setBPM: (bpm: number) => void;
   play: () => Promise<void>;
   stop: () => void;
@@ -197,6 +208,11 @@ export const useProjectStore = create<ProjectState>()(
     showSynthEditor: false,
     showEffectsRack: false,
     openFxTrackId: null,
+    sidechainEnabled: true,
+    sidechainAmount: 0.6,
+    sidechainRelease: 150,
+    sidechainSourceTrackId: null,
+    sidechainTargetOverrides: {},
     isPlaying: false,
     isRecording: false,
     loopEnabled: false,
@@ -305,6 +321,26 @@ export const useProjectStore = create<ProjectState>()(
       if (track) audioEngine.applyTrackEffects(trackId, track.effects);
     },
 
+    setSidechainEnabled(enabled) {
+      set(draft => { draft.sidechainEnabled = enabled; });
+      if (!enabled) audioEngine.teardownSidechain();
+    },
+    setSidechainAmount(amount) {
+      set(draft => { draft.sidechainAmount = amount; });
+    },
+    setSidechainRelease(release) {
+      set(draft => { draft.sidechainRelease = release; });
+    },
+    setSidechainSource(trackId) {
+      set(draft => { draft.sidechainSourceTrackId = trackId; });
+    },
+    toggleSidechainTarget(trackId) {
+      set(draft => {
+        const current = draft.sidechainTargetOverrides[trackId];
+        draft.sidechainTargetOverrides[trackId] = current === false ? true : false;
+      });
+    },
+
     setBPM(bpm) {
       set(draft => {
         draft.project.bpm = bpm;
@@ -369,6 +405,24 @@ export const useProjectStore = create<ProjectState>()(
       }
 
       audioEngine.setBPM(project.bpm);
+
+      // Auto-sidechain setup
+      const { sidechainEnabled, sidechainAmount, sidechainRelease,
+              sidechainSourceTrackId, sidechainTargetOverrides } = get();
+      if (sidechainEnabled) {
+        const tracks = project.tracks;
+        const kickTrack = sidechainSourceTrackId
+          ? tracks.find(t => t.id === sidechainSourceTrackId)
+          : tracks.find(t => t.type === 'drum');
+        if (kickTrack) {
+          const targetIds = tracks
+            .filter(t => t.type !== 'drum' && t.id !== kickTrack.id)
+            .filter(t => sidechainTargetOverrides[t.id] !== false)
+            .map(t => t.id);
+          audioEngine.setupSidechain(kickTrack.id, targetIds, sidechainAmount, sidechainRelease);
+        }
+      }
+
       audioEngine.play();
       set(draft => { draft.isPlaying = true; });
     },
