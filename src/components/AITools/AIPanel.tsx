@@ -426,7 +426,7 @@ export function AIPanel() {
     project, selectedTrackId,
     updateSynthSettings, toggleStep,
     addNote, setBPM, stop, isPlaying, launchScene,
-    assignClipToScene, addNamedScene, addPatternToTrack, removeScene, setGeneratedSong,
+    assignClipToScene, addNamedScene, addPatternToTrack, removeScene, setGeneratedSong, applyAIMix, undo,
   } = useProjectStore();
 
 
@@ -461,6 +461,7 @@ export function AIPanel() {
   const [songResult, setSongResult] = useState<GeneratedSongV2 | null>(null);
   const [songError, setSongError] = useState('');
   const [songPlanPreview, setSongPlanPreview] = useState<string[]>([]);
+  const [mixToast, setMixToast] = useState(false);
 
   const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const SCALES = ['major', 'minor', 'dorian', 'phrygian', 'mixolydian'];
@@ -715,6 +716,9 @@ export function AIPanel() {
 
         setSongResult(result);
         setGeneratedSong(result);
+        applyAIMix();
+        setMixToast(true);
+        setTimeout(() => setMixToast(false), 5000);
         // Dispose all accumulated Tone.js audio state so the next song starts clean
         audioEngine.resetTracks();
         // Small delay to let state settle before launching
@@ -729,7 +733,7 @@ export function AIPanel() {
     }
   }, [apiKey, selectedModel, songPrompt, isPlaying, stop, setBPM,
       project.tracks, project.scenes, updateSynthSettings, addPatternToTrack,
-      assignClipToScene, addNamedScene, removeScene,
+      assignClipToScene, addNamedScene, removeScene, applyAIMix,
       launchScene]);
 
   const handleGenerateChords = useCallback(() => {
@@ -1447,6 +1451,13 @@ export function AIPanel() {
           </>
         )}
       </div>
+
+      {mixToast && (
+        <div style={{ position: 'fixed', bottom: 80, right: 16, background: '#1a1a30', border: '1px solid #9945ff44', borderRadius: 8, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, zIndex: 2000 }}>
+          <span style={{ fontSize: 11, color: '#aaa' }}>AI mixed your song</span>
+          <button onClick={() => { undo(); setMixToast(false); }} style={{ fontSize: 10, color: '#9945ff', background: 'none', border: 'none', cursor: 'pointer' }}>Undo Mix</button>
+        </div>
+      )}
     </div>
   );
 }

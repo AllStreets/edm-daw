@@ -150,6 +150,7 @@ interface ProjectState {
   generatedSong: GeneratedSongV2 | null;
   setGeneratedSong: (song: GeneratedSongV2 | null) => void;
   generateClipVariation: (trackId: string, sceneId: string, howDifferent: number) => Promise<void>;
+  applyAIMix: () => void;
 
   exportSong: (onProgress: (msg: string) => void) => Promise<void>;
 
@@ -361,6 +362,28 @@ export const useProjectStore = create<ProjectState>()(
 
     setGeneratedSong(song) {
       set(draft => { draft.generatedSong = song; });
+    },
+
+    applyAIMix() {
+      const { project } = get();
+      get()._pushUndo();
+      project.tracks.forEach(track => {
+        if (track.type === 'drum') {
+          audioEngine.setTrackReverbSend(track.id, 0);
+        } else if (track.name.toLowerCase().includes('bass')) {
+          audioEngine.setTrackReverbSend(track.id, 0.05);
+          audioEngine.setTrackVolume(track.id, Math.min(1, track.volume * 1.15));
+        } else if (track.name.toLowerCase().includes('pad') || track.name.toLowerCase().includes('chord')) {
+          audioEngine.setTrackReverbSend(track.id, 0.4);
+          audioEngine.setTrackVolume(track.id, track.volume * 0.85);
+        } else {
+          audioEngine.setTrackReverbSend(track.id, 0.2);
+        }
+      });
+      set(draft => {
+        draft.sidechainEnabled = true;
+        draft.sidechainAmount = 60;
+      });
     },
 
     async generateClipVariation(trackId, sceneId, howDifferent) {
