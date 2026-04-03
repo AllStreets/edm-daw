@@ -585,7 +585,7 @@ VIBE RULES: ${VIBE_COMPOSER_HINTS[plan.vibe]}
 ENERGY RULES: ${ENERGY_DRUM_HINTS[section.energy]}
 
 LEAD PRESET ASSIGNMENT (MANDATORY): You MUST set leadPreset="${assignedLeadPreset}" — do not use any other lead preset.
-Each section in this song uses a DIFFERENT lead preset to ensure sonic variety. Honour this assignment exactly.
+This preset is used consistently across the entire song for coherence. Honour this assignment exactly.
 bass hint: "${presetHint.bass}", pad hint: "${presetHint.pad}"
 
 MIDI PITCHES: Bass(36-55): C2=36 D2=38 E2=40 F2=41 G2=43 A2=45 B2=47 C3=48 D3=50 E3=52 G3=55
@@ -733,22 +733,21 @@ export async function generateFullSong(
 
   const sections: GeneratedSongV2['sections'] = [];
 
-  // Rotate lead presets across sections so each one sounds different
-  const LEAD_PRESET_POOL = ['Supersaw', 'Acid Lead', 'FM Bell', 'Reese Screech', 'Pluck', 'Distorted Square'];
-  // Build a shuffled rotation that never repeats consecutively
-  const leadRotation: string[] = [];
-  let lastPreset = '';
-  for (let i = 0; i < plan.sections.length; i++) {
-    const candidates = LEAD_PRESET_POOL.filter(p => p !== lastPreset);
-    const pick = candidates[i % candidates.length];
-    leadRotation.push(pick);
-    lastPreset = pick;
-  }
+  // Pick ONE lead preset for the entire song based on vibe — consistent within a song,
+  // but the pool gives variety across different song generations.
+  const LEAD_PRESET_BY_VIBE: Record<Vibe, string[]> = {
+    aggressive: ['Reese Screech', 'Distorted Square'],
+    calm:       ['FM Bell', 'Pluck'],
+    happy:      ['Supersaw', 'Acid Lead'],
+    dark:       ['Distorted Square', 'Reese Screech'],
+    neutral:    ['Supersaw', 'Pluck', 'Acid Lead', 'FM Bell'],
+  };
+  const vibePool = LEAD_PRESET_BY_VIBE[vibe];
+  const songLeadPreset = vibePool[Math.floor(Math.random() * vibePool.length)];
 
   for (let i = 0; i < plan.sections.length; i++) {
     const section = plan.sections[i];
-    const assignedLeadPreset = leadRotation[i];
-    const patterns = await composeSection(apiKey, plan, section, i, assignedLeadPreset, model, text => onProgress(text, [...sectionsDone]));
+    const patterns = await composeSection(apiKey, plan, section, i, songLeadPreset, model, text => onProgress(text, [...sectionsDone]));
     sections.push({ name: section.name, patterns });
     sectionsDone.push(section.name);
     onProgress(`${section.name} \u2713`, [...sectionsDone]);
