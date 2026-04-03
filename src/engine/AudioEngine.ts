@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import type { Pattern, SynthSettings } from '../types';
+import type { Pattern, SynthSettings, TrackEffect } from '../types';
 import { createSynth, updateSynth, type SynthChain } from './SynthEngine';
 import { DrumMachine } from './DrumMachine';
 import { Sequencer, type StepCallback } from './Sequencer';
@@ -9,6 +9,8 @@ interface TrackAudio {
   drumMachine?: DrumMachine;
   sequencer?: Sequencer;
   gain: Tone.Gain;
+  fxBus: Tone.Gain;
+  fxNodes: Map<string, Tone.ToneAudioNode>;
   panner: Tone.Panner;
   reverbSend: Tone.Gain;
   delaySend: Tone.Gain;
@@ -207,12 +209,16 @@ class AudioEngine {
   private ensureTrack(trackId: string): TrackAudio {
     if (!this.tracks.has(trackId)) {
       const gain = new Tone.Gain(0.8);
+      const fxBus = new Tone.Gain(1);
+      const fxNodes = new Map<string, Tone.ToneAudioNode>();
       const panner = new Tone.Panner(0);
       const reverbSend = new Tone.Gain(0);
       const delaySend  = new Tone.Gain(0);
       const trackAnalyser = new Tone.Analyser('waveform', 256);
 
-      gain.connect(panner);
+      // gain → fxBus → panner (fx nodes are inserted between fxBus and panner)
+      gain.connect(fxBus);
+      fxBus.connect(panner);
       panner.connect(this.masterGain);
       gain.connect(trackAnalyser);
 
@@ -226,9 +232,78 @@ class AudioEngine {
         delaySend.connect(this.delayEffect);
       }
 
-      this.tracks.set(trackId, { gain, panner, reverbSend, delaySend, trackAnalyser });
+      this.tracks.set(trackId, { gain, fxBus, fxNodes, panner, reverbSend, delaySend, trackAnalyser });
     }
     return this.tracks.get(trackId)!;
+  }
+
+  // ── Per-track FX chain ──────────────────────────────────────────────────────
+
+  private rebuildFxChain(track: TrackAudio, effects: TrackEffect[]): void {
+    // Dispose existing fx nodes
+    track.fxNodes.forEach(node => {
+      try { node.disconnect(); } catch { /* ignore */ }
+      try { (node as Tone.ToneAudioNode).dispose(); } catch { /* ignore */ }
+    });
+    track.fxNodes.clear();
+
+    // Disconnect fxBus from everything downstream temporarily
+    try { track.fxBus.disconnect(); } catch { /* ignore */ }
+
+    const activeEffects = effects.filter(e => e.on);
+    if (activeEffects.length === 0) {
+      track.fxBus.connect(track.panner);
+      return;
+    }
+
+    const nodes: Tone.ToneAudioNode[] = activeEffects.map(e => this.createFxNode(e));
+    activeEffects.forEach((e, i) => track.fxNodes.set(e.id, nodes[i]));
+
+    // Wire in series: fxBus → node[0] → ... → node[n-1] → panner
+    track.fxBus.connect(nodes[0]);
+    for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]);
+    nodes[nodes.length - 1].connect(track.panner);
+  }
+
+  private createFxNode(effect: TrackEffect): Tone.ToneAudioNode {
+    const s = effect.settings;
+    switch (s.fxType) {
+      case 'reverb': {
+        const r = new Tone.Reverb({ decay: s.decay, preDelay: s.preDelay });
+        r.wet.value = s.wet;
+        r.generate().catch(() => {});
+        return r;
+      }
+      case 'delay': {
+        const d = s.pingPong
+          ? new Tone.PingPongDelay(s.time, s.feedback)
+          : new Tone.FeedbackDelay(s.time, s.feedback);
+        d.wet.value = s.wet;
+        return d;
+      }
+      case 'filter': {
+        return new Tone.Filter(s.frequency, s.filterType as Tone.FilterType);
+      }
+      case 'distortion': {
+        const dist = new Tone.Distortion(s.distortion);
+        dist.wet.value = s.wet;
+        return dist;
+      }
+      case 'compressor': {
+        return new Tone.Compressor({
+          threshold: s.threshold,
+          ratio: s.ratio,
+          attack: s.attack / 1000,
+          release: s.release / 1000,
+          knee: s.knee,
+        });
+      }
+    }
+  }
+
+  applyTrackEffects(trackId: string, effects: TrackEffect[]): void {
+    const track = this.tracks.get(trackId);
+    if (track) this.rebuildFxChain(track, effects);
   }
 
   createSynthTrack(trackId: string, settings: SynthSettings): Tone.PolySynth {

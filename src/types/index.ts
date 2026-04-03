@@ -139,6 +139,29 @@ export interface Effect {
   on: boolean;
 }
 
+// ── Per-track FX chain ────────────────────────────────────────────────────────
+
+export interface TrackReverbSettings     { wet: number; decay: number; preDelay: number; }
+export interface TrackDelaySettings      { wet: number; time: string; feedback: number; pingPong: boolean; }
+export interface TrackFilterSettings     { filterType: 'lowpass' | 'highpass' | 'bandpass'; frequency: number; Q: number; }
+export interface TrackDistortionSettings { wet: number; distortion: number; }
+export interface TrackCompressorSettings { threshold: number; ratio: number; attack: number; release: number; knee: number; }
+
+export type TrackFXType = 'reverb' | 'delay' | 'filter' | 'distortion' | 'compressor';
+
+export type TrackFXSettings =
+  | ({ fxType: 'reverb' }      & TrackReverbSettings)
+  | ({ fxType: 'delay' }       & TrackDelaySettings)
+  | ({ fxType: 'filter' }      & TrackFilterSettings)
+  | ({ fxType: 'distortion' }  & TrackDistortionSettings)
+  | ({ fxType: 'compressor' }  & TrackCompressorSettings);
+
+export interface TrackEffect {
+  id: string;
+  on: boolean;
+  settings: TrackFXSettings;
+}
+
 // =====================================================
 // Tracks
 // =====================================================
@@ -157,7 +180,7 @@ export interface Track {
   armed: boolean;
   patterns: Pattern[];
   synthSettings: SynthSettings;
-  effects: Effect[];
+  effects: TrackEffect[];
 }
 
 // =====================================================
