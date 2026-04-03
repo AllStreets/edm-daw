@@ -53,6 +53,65 @@ export function generateWaveformData(audioBuffer: AudioBuffer, samples = 256): F
 }
 
 /**
+ * Decode a recorded audio blob, normalize to -1 dBFS, and return a WAV blob.
+ * WAV is universally playable (macOS, Windows, iOS, Android) with no codec issues.
+ */
+export async function blobToNormalizedWav(blob: Blob): Promise<Blob> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const ctx = new AudioContext();
+  const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+  await ctx.close();
+
+  const numChannels = audioBuffer.numberOfChannels;
+  const length = audioBuffer.length;
+  const sampleRate = audioBuffer.sampleRate;
+
+  // Find absolute peak across all channels
+  let peak = 0;
+  for (let ch = 0; ch < numChannels; ch++) {
+    const data = audioBuffer.getChannelData(ch);
+    for (let i = 0; i < length; i++) {
+      const abs = Math.abs(data[i]);
+      if (abs > peak) peak = abs;
+    }
+  }
+  // Normalize to -1 dBFS (0.891); if silent, keep as-is
+  const gain = peak > 0.001 ? 0.891 / peak : 1;
+
+  // Build 16-bit PCM WAV
+  const byteDepth = 2;
+  const dataLen = length * numChannels * byteDepth;
+  const buf = new ArrayBuffer(44 + dataLen);
+  const v = new DataView(buf);
+
+  const str = (off: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i));
+  };
+
+  str(0, 'RIFF'); v.setUint32(4, 36 + dataLen, true);
+  str(8, 'WAVE'); str(12, 'fmt ');
+  v.setUint32(16, 16, true);          // chunk size
+  v.setUint16(20, 1, true);           // PCM
+  v.setUint16(22, numChannels, true);
+  v.setUint32(24, sampleRate, true);
+  v.setUint32(28, sampleRate * numChannels * byteDepth, true);
+  v.setUint16(32, numChannels * byteDepth, true);
+  v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, dataLen, true);
+
+  let off = 44;
+  for (let i = 0; i < length; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const s = Math.max(-1, Math.min(1, audioBuffer.getChannelData(ch)[i] * gain));
+      v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      off += 2;
+    }
+  }
+
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+/**
  * Trigger a file download in the browser
  */
 export function downloadBlob(blob: Blob, filename: string): void {

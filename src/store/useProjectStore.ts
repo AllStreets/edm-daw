@@ -15,7 +15,7 @@ import {
   defaultSynthSettings,
 } from '../types';
 import { audioEngine } from '../engine/AudioEngine';
-import { downloadBlob } from '../utils/audioUtils';
+import { downloadBlob, blobToNormalizedWav } from '../utils/audioUtils';
 
 // =====================================================
 // Default project factory
@@ -344,19 +344,10 @@ export const useProjectStore = create<ProjectState>()(
 
     stopRecording() {
       set(draft => { draft.isRecording = false; });
-      audioEngine.stopRecording().then(blob => {
-        const ext = blob.type.includes('mp4') ? 'm4a'
-                  : blob.type.includes('ogg') ? 'ogg'
-                  : 'webm';
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `recording-${Date.now()}.${ext}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-      });
+      audioEngine.stopRecording()
+        .then(blob => blobToNormalizedWav(blob))
+        .then(wav => downloadBlob(wav, `recording-${Date.now()}.wav`))
+        .catch(e => console.error('stopRecording failed:', e));
     },
 
     addTrack(type) {
