@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import type { Pattern, SynthSettings, TrackEffect } from '../types';
+import type { Pattern, SynthSettings, TrackEffect, AutomationParameter } from '../types';
 import { createSynth, updateSynth, type SynthChain } from './SynthEngine';
 import { DrumMachine } from './DrumMachine';
 import { Sequencer, type StepCallback } from './Sequencer';
@@ -208,6 +208,46 @@ class AudioEngine {
     const track = this.tracks.get(trackId);
     if (track && this.delayEffect) {
       track.delaySend.gain.rampTo(Math.max(0, Math.min(1, amount)), 0.05);
+    }
+  }
+
+  setTrackParam(trackId: string, param: AutomationParameter, value: number, time?: number): void {
+    const track = this.tracks.get(trackId);
+    if (!track) return;
+    const rampTime = time ?? Tone.now();
+    const rampDuration = 0.016;
+
+    switch (param) {
+      case 'volume':
+        track.gain.gain.linearRampTo(value, rampDuration, rampTime);
+        break;
+      case 'pan':
+        track.panner.pan.linearRampTo(value * 2 - 1, rampDuration, rampTime);
+        break;
+      case 'filterCutoff': {
+        const chain = track.synthChain;
+        if (chain) chain.filter.frequency.linearRampTo(20 + value * 19980, rampDuration, rampTime);
+        break;
+      }
+      case 'filterResonance': {
+        const chain = track.synthChain;
+        if (chain) chain.filter.Q.linearRampTo(value * 20, rampDuration, rampTime);
+        break;
+      }
+      case 'reverbWet':
+        track.reverbSend.gain.linearRampTo(value, rampDuration, rampTime);
+        break;
+      case 'delayWet':
+        track.delaySend.gain.linearRampTo(value, rampDuration, rampTime);
+        break;
+      case 'pitch': {
+        const chain = track.synthChain;
+        if (chain) {
+          const semitones = (value - 0.5) * 24;
+          chain.synth.set({ detune: semitones * 100 });
+        }
+        break;
+      }
     }
   }
 
@@ -437,7 +477,8 @@ class AudioEngine {
         const noteSec = Math.max(stepSec * 0.5, stepSec * duration * 0.95);
         synth.triggerAttackRelease(noteName, noteSec, time, velocity / 127);
       }
-    }, () => this.fireSongEnd());
+    }, () => this.fireSongEnd(),
+    (param, value, time) => this.setTrackParam(trackId, param, value, time));
   }
 
   stopMelodicSequencer(trackId: string): void {

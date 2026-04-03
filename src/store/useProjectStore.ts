@@ -12,6 +12,7 @@ import type {
   TrackEffect,
   TrackFXType,
   TrackFXSettings,
+  AutomationParameter,
 } from '../types';
 import type { GeneratedSongV2 } from '../services/ClaudeSongGenerator';
 import {
@@ -180,6 +181,11 @@ interface ProjectState {
   addNote: (trackId: string, patternId: string, note: Note) => void;
   removeNote: (trackId: string, patternId: string, noteId: string) => void;
   updateNote: (trackId: string, patternId: string, noteId: string, changes: Partial<Note>) => void;
+
+  addAutomationLane: (trackId: string, patternId: string, parameter: AutomationParameter) => void;
+  removeAutomationLane: (trackId: string, patternId: string, laneId: string) => void;
+  setAutomationPoint: (trackId: string, patternId: string, laneId: string, step: number, value: number) => void;
+  removeAutomationPoint: (trackId: string, patternId: string, laneId: string, step: number) => void;
 
   addScene: () => void;
   addNamedScene: (name: string) => string;  // returns the new scene's id
@@ -773,6 +779,43 @@ export const useProjectStore = create<ProjectState>()(
           Object.assign(note, changes);
           draft.project.modifiedAt = new Date().toISOString();
         }
+      });
+    },
+
+    addAutomationLane(trackId, patternId, parameter) {
+      set(draft => {
+        const p = draft.project.tracks.find(t => t.id === trackId)?.patterns.find(p => p.id === patternId);
+        if (p) {
+          if (!p.automation) p.automation = [];
+          p.automation.push({ id: crypto.randomUUID(), parameter, points: [] });
+        }
+      });
+    },
+
+    removeAutomationLane(trackId, patternId, laneId) {
+      set(draft => {
+        const p = draft.project.tracks.find(t => t.id === trackId)?.patterns.find(p => p.id === patternId);
+        if (p?.automation) p.automation = p.automation.filter(l => l.id !== laneId);
+      });
+    },
+
+    setAutomationPoint(trackId, patternId, laneId, step, value) {
+      set(draft => {
+        const p = draft.project.tracks.find(t => t.id === trackId)?.patterns.find(p => p.id === patternId);
+        const lane = p?.automation?.find(l => l.id === laneId);
+        if (!lane) return;
+        const existing = lane.points.find(pt => pt.step === step);
+        if (existing) existing.value = value;
+        else lane.points.push({ step, value });
+        lane.points.sort((a, b) => a.step - b.step);
+      });
+    },
+
+    removeAutomationPoint(trackId, patternId, laneId, step) {
+      set(draft => {
+        const p = draft.project.tracks.find(t => t.id === trackId)?.patterns.find(p => p.id === patternId);
+        const lane = p?.automation?.find(l => l.id === laneId);
+        if (lane) lane.points = lane.points.filter(pt => pt.step !== step);
       });
     },
 

@@ -10,6 +10,21 @@ export interface Note {
   velocity: number; // 0-127
 }
 
+export type AutomationParameter =
+  | 'volume' | 'pan' | 'filterCutoff' | 'filterResonance'
+  | 'reverbWet' | 'delayWet' | 'pitch';
+
+export interface AutomationPoint {
+  step: number;   // 0 to pattern.steps-1
+  value: number;  // 0-1 normalized
+}
+
+export interface AutomationLane {
+  id: string;
+  parameter: AutomationParameter;
+  points: AutomationPoint[];
+}
+
 export interface Pattern {
   id: string;
   name: string;
@@ -17,6 +32,7 @@ export interface Pattern {
   notes: Note[]; // For piano roll / melodic content
   stepData: number[][]; // [trackRow][step] for drum sequencer; 0=off, 1-127=velocity
   color: string;
+  automation?: AutomationLane[];
 }
 
 // =====================================================
