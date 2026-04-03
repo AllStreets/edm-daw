@@ -3,6 +3,7 @@ import * as Tone from 'tone';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useUIStore } from '../../store/useUIStore';
 import { SidechainPanel } from './SidechainPanel';
+import { useKeyboardPiano } from '../../hooks/useKeyboardPiano';
 
 // ─── Tiny reusable button ────────────────────────────────────────────────────
 
@@ -315,10 +316,15 @@ const ViewSwitcher: React.FC<ViewSwitcherProps> = ({ active, onChange }) => {
 // ─── Main TransportBar ────────────────────────────────────────────────────────
 
 export const TransportBar: React.FC = () => {
-  const { project, isPlaying, isRecording, loopEnabled, currentStep, play, stop, pause, startRecording, stopRecording, toggleLoop, setBPM, setActiveView, activeView, setMasterVolume, sidechainEnabled, swingAmount, setSwingAmount } =
+  const { project, isPlaying, isRecording, loopEnabled, currentStep, play, stop, pause, startRecording, stopRecording, toggleLoop, setBPM, setActiveView, activeView, setMasterVolume, sidechainEnabled, swingAmount, setSwingAmount, selectedTrackId } =
     useProjectStore();
   const { setActivePanel, activePanel, setBottomPanelTab } = useUIStore();
   const [showSidechainPanel, setShowSidechainPanel] = useState(false);
+
+  const selectedTrack = selectedTrackId ? project.tracks.find(t => t.id === selectedTrackId) : null;
+  const { octave, activeKeys } = useKeyboardPiano(
+    selectedTrack?.type === 'synth' ? selectedTrackId : null
+  );
 
   // Real-time elapsed counter driven by Tone.js transport seconds
   const [elapsedSecs, setElapsedSecs] = useState(0);
@@ -573,6 +579,31 @@ export const TransportBar: React.FC = () => {
 
         {/* ── Divider ── */}
         <div style={{ width: 1, height: 30, background: '#1e1e3a', flexShrink: 0 }} />
+
+        {/* ── Keyboard Piano Indicator ── */}
+        {selectedTrack?.type === 'synth' && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <span style={{ fontSize: 8, color: '#555', letterSpacing: 1 }}>
+              {activeKeys.size > 0 ? 'PLAYING' : 'KEYS'} Oct {octave}
+            </span>
+            <div style={{ display: 'flex', gap: 1 }}>
+              {['a','w','s','e','d','f','t','g','y','h','u','j','k'].map(k => {
+                const isBlack = ['w','e','t','y','u'].includes(k);
+                const isActive = activeKeys.has(k);
+                return (
+                  <div key={k} style={{
+                    width: isBlack ? 6 : 8, height: isBlack ? 12 : 16,
+                    background: isActive ? '#9945ff' : (isBlack ? '#222' : '#ccc'),
+                    border: `1px solid ${isActive ? '#9945ff' : '#555'}`,
+                    borderRadius: '0 0 2px 2px',
+                    marginTop: isBlack ? 0 : 4,
+                    boxShadow: isActive ? `0 0 4px #9945ff` : 'none',
+                  }} />
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ── Master Volume ── */}
         <MasterVolume value={project.masterVolume} onChange={setMasterVolume} />
