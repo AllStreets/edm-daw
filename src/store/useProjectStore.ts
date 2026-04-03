@@ -492,10 +492,19 @@ export const useProjectStore = create<ProjectState>()(
       onProgress('Recording...');
       try {
         await audioEngine.startRecording();
-        audioEngine.setOnSongEnd(null); // will be overridden by our promise
+
+        // Await play() so it finishes building sequencers and sets its own
+        // setOnSongEnd callback — then we immediately override that callback
+        // with ours before the transport has had any chance to reach song end.
+        await get().play();
+
         await new Promise<void>((resolve, reject) => {
           audioEngine.setOnSongEnd(async () => {
             try {
+              // Stop the transport and clean up synths/state.
+              // isRecording is false in the store (export bypasses startRecording()
+              // action) so stop() won't auto-download a recording file.
+              get().stop();
               const rawBlob = await audioEngine.stopRecording();
               onProgress('Encoding WAV...');
               const wav = await blobToNormalizedWav(rawBlob);
@@ -504,9 +513,11 @@ export const useProjectStore = create<ProjectState>()(
               resolve();
             } catch (e) { reject(e); }
           });
-          void get().play();
         });
       } catch (e) {
+        // Clean up recording if something went wrong mid-export
+        try { get().stop(); } catch { /* ignore */ }
+        audioEngine.stopRecording().catch(() => {});
         console.error('Export failed:', e);
         onProgress('Export failed');
         setTimeout(() => onProgress(''), 2000);
