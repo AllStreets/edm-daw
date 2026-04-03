@@ -6,6 +6,7 @@ import type { GeneratedSongV2 } from '../../services/ClaudeSongGenerator';
 import { defaultPattern } from '../../types';
 import { SYNTH_PRESETS } from '../../engine/SynthPresets';
 import { audioEngine } from '../../engine/AudioEngine';
+import { VocalsTab } from './VocalsTab';
 
 // =====================================================
 // Shared UI primitives
@@ -388,7 +389,7 @@ function MixSuggestionCard({
 // =====================================================
 // Tab definitions
 // =====================================================
-const TABS = ['Song', 'Chords', 'Bassline', 'Melody', 'Drums', 'Mix', 'Prompt'] as const;
+const TABS = ['Song', 'Chords', 'Bassline', 'Melody', 'Drums', 'Mix', 'Prompt', 'Vocals'] as const;
 type Tab = typeof TABS[number];
 
 const TAB_ICONS: Record<Tab, string> = {
@@ -399,6 +400,7 @@ const TAB_ICONS: Record<Tab, string> = {
   Drums:    '◈',
   Mix:      '≋',
   Prompt:   '›',
+  Vocals:   '♪',
 };
 
 const MODELS = [
@@ -719,6 +721,12 @@ export function AIPanel() {
         applyAIMix();
         setMixToast(true);
         setTimeout(() => setMixToast(false), 5000);
+        // Generate lyrics in background
+        try {
+          const { generateLyrics } = await import('../../services/ClaudeSongGenerator');
+          const lyrics = await generateLyrics(apiKey.trim(), selectedModel, songPrompt.trim(), result.plan, () => {});
+          useAIStore.getState().setLyrics(lyrics);
+        } catch { /* lyrics are non-critical */ }
         // Dispose all accumulated Tone.js audio state so the next song starts clean
         audioEngine.resetTracks();
         // Small delay to let state settle before launching
@@ -1450,6 +1458,9 @@ export function AIPanel() {
             )}
           </>
         )}
+
+        {/* ==================== VOCALS TAB ==================== */}
+        {activeTab === 'Vocals' && <VocalsTab />}
       </div>
 
       {mixToast && (

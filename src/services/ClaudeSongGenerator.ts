@@ -800,3 +800,40 @@ export async function generateFullSong(
 
   return { plan, sections };
 }
+
+export async function generateLyrics(
+  apiKey: string,
+  model: string,
+  description: string,
+  plan: SongPlan,
+  onProgress: (text: string) => void,
+): Promise<string> {
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+  onProgress('Generating lyrics...');
+
+  const sectionList = plan.sections.map((s, i) => `${i + 1}. ${s.name} (${s.bars} bars, ${s.energy} energy)`).join('\n');
+
+  const message = await withRetry(() => client.messages.create({
+    model,
+    max_tokens: 1024,
+    messages: [{
+      role: 'user',
+      content: `Write lyrics for an EDM track. Song description: "${description}". Vibe: ${plan.vibe}. Key: ${plan.key} ${plan.scale}. BPM: ${plan.bpm}.
+
+Song structure:
+${sectionList}
+
+Write lyrics for each section. Sections like Intro/Riser/Outro can have short phrases or be marked [instrumental]. Keep it authentic to the genre. Format:
+
+[Section Name]
+lyrics here
+
+[Next Section]
+lyrics here`,
+    }],
+  }));
+
+  return message.content
+    .filter((c): c is Anthropic.TextBlock => c.type === 'text')
+    .map(c => c.text).join('');
+}

@@ -61,6 +61,7 @@ interface AIState {
   lastGeneratedPattern: boolean[][];
   lastGeneratedMelody: Note[];
   aiSettings: AIGeneratorSettings;
+  generatedLyrics: string;
 
   // Actions
   setAISettings: (settings: Partial<AIGeneratorSettings>) => void;
@@ -69,6 +70,7 @@ interface AIState {
   generateBassline: (chords: string[], settings?: Partial<AIGeneratorSettings>) => Note[];
   generateMelody: (chords: string[], settings?: Partial<AIGeneratorSettings>) => Note[];
   applyAIPrompt: (prompt: string, trackId: string) => SynthSettings;
+  setLyrics: (lyrics: string) => void;
 }
 
 export const useAIStore = create<AIState>()(
@@ -77,6 +79,7 @@ export const useAIStore = create<AIState>()(
     lastGeneratedChords: [],
     lastGeneratedPattern: Array.from({ length: 8 }, () => Array(16).fill(false)),
     lastGeneratedMelody: [],
+    generatedLyrics: '',
     aiSettings: {
       scale: 'minor',
       key: 'A',
@@ -448,6 +451,10 @@ export const useAIStore = create<AIState>()(
       }
 
       return settings;
+    },
+
+    setLyrics(lyrics) {
+      set(draft => { draft.generatedLyrics = lyrics; });
     },
   }))
 );
