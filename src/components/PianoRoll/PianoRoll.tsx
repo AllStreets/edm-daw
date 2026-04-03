@@ -136,7 +136,7 @@ const AutomationLaneView: React.FC<LaneViewProps> = ({
             width: 1, background: i % 4 === 0 ? '#1a1a2e' : '#0f0f18',
           }} />
         ))}
-        <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} preserveAspectRatio="none">
+        <svg viewBox="0 0 100 60" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} preserveAspectRatio="none">
           {lane.points.length > 1 && (
             <polyline
               points={lane.points.map(p =>
@@ -148,9 +148,9 @@ const AutomationLaneView: React.FC<LaneViewProps> = ({
           {lane.points.map(p => (
             <circle
               key={p.step}
-              cx={`${(p.step / totalSteps) * 100}%`}
-              cy={`${(1 - p.value) * 100}%`}
-              r="4" fill={trackColor}
+              cx={(p.step / totalSteps) * 100}
+              cy={(1 - p.value) * 60}
+              r="2" fill={trackColor}
             />
           ))}
         </svg>

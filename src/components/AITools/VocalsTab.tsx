@@ -4,11 +4,11 @@ import { useProjectStore } from '../../store/useProjectStore';
 
 export const VocalsTab: React.FC = () => {
   const { generatedLyrics, setLyrics } = useAIStore();
-  const { generatedSong, addVocalTrack } = useProjectStore();
+  const { generatedSong } = useProjectStore();
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState('');
 
-  const renderVocals = async () => {
+  const renderVocals = () => {
     if (!generatedLyrics || !window.speechSynthesis) {
       setError('Speech synthesis not available in this browser.');
       return;
@@ -16,39 +16,21 @@ export const VocalsTab: React.FC = () => {
     setRendering(true);
     setError('');
 
-    try {
-      const bpm = generatedSong?.plan.bpm ?? 128;
+    window.speechSynthesis.cancel();
 
-      const ctx = new AudioContext();
-      const dest = ctx.createMediaStreamDestination();
-      const chunks: Blob[] = [];
-      const recorder = new MediaRecorder(dest.stream);
-      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    const bpm = generatedSong?.plan.bpm ?? 128;
+    const utterance = new SpeechSynthesisUtterance(generatedLyrics);
+    utterance.rate = Math.max(0.5, Math.min(2, bpm / 120));
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
 
-      const blob: Blob = await new Promise((resolve, reject) => {
-        recorder.onstop = () => resolve(new Blob(chunks, { type: 'audio/webm' }));
-
-        const utterance = new SpeechSynthesisUtterance(generatedLyrics);
-        utterance.rate = Math.max(0.5, Math.min(2, bpm / 120));
-        utterance.pitch = 1.0;
-        utterance.volume = 1.0;
-
-        utterance.onend = () => { recorder.stop(); ctx.close(); };
-        utterance.onerror = (e) => { recorder.stop(); ctx.close(); reject(new Error(e.error)); };
-
-        recorder.start();
-        window.speechSynthesis.speak(utterance);
-      });
-
-      await addVocalTrack(blob);
+    utterance.onend = () => setRendering(false);
+    utterance.onerror = () => {
       setRendering(false);
-    } catch (e) {
-      setRendering(false);
-      setError(
-        'Could not capture vocal audio. Try: Chrome with microphone permission, or download lyrics and record manually.'
-      );
-      console.error('Vocal render error:', e);
-    }
+      setError('Speech synthesis failed. Try a different browser.');
+    };
+
+    window.speechSynthesis.speak(utterance);
   };
 
   return (

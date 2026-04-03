@@ -374,35 +374,41 @@ export const useProjectStore = create<ProjectState>()(
     applyAIMix() {
       const { project } = get();
       get()._pushUndo();
-      project.tracks.forEach(track => {
-        if (track.type === 'drum') {
-          audioEngine.setTrackReverbSend(track.id, 0);
-        } else if (track.name.toLowerCase().includes('bass')) {
-          audioEngine.setTrackReverbSend(track.id, 0.05);
-          audioEngine.setTrackVolume(track.id, Math.min(1, track.volume * 1.15));
-        } else if (track.name.toLowerCase().includes('pad') || track.name.toLowerCase().includes('chord')) {
-          audioEngine.setTrackReverbSend(track.id, 0.4);
-          audioEngine.setTrackVolume(track.id, track.volume * 0.85);
-        } else {
-          audioEngine.setTrackReverbSend(track.id, 0.2);
-        }
-      });
+      // Persist volume changes to store AND apply to audio engine so undo works
       set(draft => {
+        draft.project.tracks.forEach(track => {
+          if (track.type === 'drum') {
+            audioEngine.setTrackReverbSend(track.id, 0);
+          } else if (track.name.toLowerCase().includes('bass')) {
+            const newVol = Math.min(1, track.volume * 1.15);
+            audioEngine.setTrackReverbSend(track.id, 0.05);
+            audioEngine.setTrackVolume(track.id, newVol);
+            track.volume = newVol;
+          } else if (track.name.toLowerCase().includes('pad') || track.name.toLowerCase().includes('chord')) {
+            const newVol = track.volume * 0.85;
+            audioEngine.setTrackReverbSend(track.id, 0.4);
+            audioEngine.setTrackVolume(track.id, newVol);
+            track.volume = newVol;
+          } else {
+            audioEngine.setTrackReverbSend(track.id, 0.2);
+          }
+        });
+        // sidechainAmount is stored as 0-1 (matches SidechainPanel and AudioEngine expectations)
         draft.sidechainEnabled = true;
-        draft.sidechainAmount = 60;
+        draft.sidechainAmount = 0.6;
       });
     },
 
     async addVocalTrack(audioBlob) {
-      const { blobToNormalizedWav } = await import('../utils/audioUtils');
-      const wav = await blobToNormalizedWav(audioBlob);
-      const url = URL.createObjectURL(wav);
-      void url; // stored in note velocity field as side channel
+      // Play the captured audio directly via HTMLAudioElement
+      const url = URL.createObjectURL(audioBlob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
 
       const trackId = crypto.randomUUID();
       set(draft => {
         draft.project.tracks.push({
-          id: trackId, name: 'Vocals', type: 'audio',
+          id: trackId, name: 'Vocals', type: 'synth',
           color: '#00d4ff', volume: 0.9, pan: 0,
           mute: false, solo: false, armed: false,
           patterns: [], synthSettings: defaultSynthSettings(), effects: [],
@@ -413,10 +419,12 @@ export const useProjectStore = create<ProjectState>()(
       const firstScene = project.scenes[0];
       if (firstScene) {
         const pattern = defaultPattern({ name: 'Vocals', color: '#00d4ff' });
-        pattern.notes = [{ id: crypto.randomUUID(), pitch: 0, startStep: 0, duration: 64, velocity: 100 }];
         get().addPatternToTrack(trackId, pattern);
         get().assignClipToScene(firstScene.id, trackId, pattern.id);
       }
+
+      // Play back immediately so the user hears the result
+      audio.play().catch(() => {});
     },
 
     async generateClipVariation(trackId, sceneId, howDifferent) {
@@ -446,12 +454,19 @@ export const useProjectStore = create<ProjectState>()(
         () => {},
       );
 
+      // Pick the right part based on which track we're varying
+      const trackName = track.name.toLowerCase();
+      const sourceNotes =
+        trackName.includes('bass') ? varied.bass.notes :
+        trackName.includes('pad') || trackName.includes('chord') ? varied.pad.notes :
+        varied.lead.notes;
+
       get()._pushUndo();
       set(draft => {
         const t = draft.project.tracks.find(t => t.id === trackId);
         const p = t?.patterns.find(p => p.id === clipId);
         if (p) {
-          p.notes = varied.lead.notes.map(n => ({
+          p.notes = sourceNotes.map(n => ({
             id: crypto.randomUUID(),
             pitch: n.pitch,
             startStep: n.startStep,
