@@ -146,6 +146,8 @@ interface ProjectState {
   swingAmount: number;
   setSwingAmount: (amount: number) => void;
 
+  exportSong: (onProgress: (msg: string) => void) => Promise<void>;
+
   setBPM: (bpm: number) => void;
   play: () => Promise<void>;
   stop: () => void;
@@ -349,6 +351,36 @@ export const useProjectStore = create<ProjectState>()(
 
     setSwingAmount(amount) {
       set(draft => { draft.swingAmount = amount; });
+    },
+
+    async exportSong(onProgress) {
+      const { project, isPlaying } = get();
+      if (isPlaying) { onProgress('Stop playback first'); setTimeout(() => onProgress(''), 2000); return; }
+
+      onProgress('Recording...');
+      try {
+        await audioEngine.startRecording();
+        audioEngine.setOnSongEnd(null); // will be overridden by our promise
+        await new Promise<void>((resolve, reject) => {
+          audioEngine.setOnSongEnd(async () => {
+            try {
+              const rawBlob = await audioEngine.stopRecording();
+              onProgress('Encoding WAV...');
+              const wav = await blobToNormalizedWav(rawBlob);
+              const name = `${project.name.replace(/\s+/g, '-')}-${new Date().toISOString().slice(0,10)}.wav`;
+              downloadBlob(wav, name);
+              resolve();
+            } catch (e) { reject(e); }
+          });
+          void get().play();
+        });
+      } catch (e) {
+        console.error('Export failed:', e);
+        onProgress('Export failed');
+        setTimeout(() => onProgress(''), 2000);
+        return;
+      }
+      onProgress('');
     },
 
     setBPM(bpm) {

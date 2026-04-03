@@ -316,7 +316,7 @@ const ViewSwitcher: React.FC<ViewSwitcherProps> = ({ active, onChange }) => {
 // ─── Main TransportBar ────────────────────────────────────────────────────────
 
 export const TransportBar: React.FC = () => {
-  const { project, isPlaying, isRecording, loopEnabled, currentStep, play, stop, pause, startRecording, stopRecording, toggleLoop, setBPM, setActiveView, activeView, setMasterVolume, sidechainEnabled, swingAmount, setSwingAmount, selectedTrackId } =
+  const { project, isPlaying, isRecording, loopEnabled, currentStep, play, stop, pause, startRecording, stopRecording, toggleLoop, setBPM, setActiveView, activeView, setMasterVolume, sidechainEnabled, swingAmount, setSwingAmount, selectedTrackId, exportSong } =
     useProjectStore();
   const { setActivePanel, activePanel, setBottomPanelTab } = useUIStore();
   const [showSidechainPanel, setShowSidechainPanel] = useState(false);
@@ -325,6 +325,7 @@ export const TransportBar: React.FC = () => {
   const { octave, activeKeys } = useKeyboardPiano(
     selectedTrack?.type === 'synth' ? selectedTrackId : null
   );
+  const [exportMsg, setExportMsg] = useState('');
 
   // Real-time elapsed counter driven by Tone.js transport seconds
   const [elapsedSecs, setElapsedSecs] = useState(0);
@@ -507,6 +508,21 @@ export const TransportBar: React.FC = () => {
           >
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5 }}>SC</span>
           </IconBtn>
+
+          {/* Export */}
+          <button
+            onClick={() => void exportSong(setExportMsg)}
+            disabled={!!exportMsg || isPlaying}
+            title="Export song to WAV"
+            style={{
+              fontSize: 9, padding: '3px 7px', borderRadius: 3,
+              background: exportMsg ? '#1a2a1a' : '#0f0f1a',
+              border: '1px solid', borderColor: exportMsg ? '#00ff8844' : '#333',
+              color: exportMsg ? '#00ff88' : '#888',
+              cursor: exportMsg || isPlaying ? 'default' : 'pointer',
+              fontFamily: 'monospace', fontWeight: 700, letterSpacing: 0.5,
+            }}
+          >{exportMsg || 'EXPORT'}</button>
         </div>
         {showSidechainPanel && <SidechainPanel onClose={() => setShowSidechainPanel(false)} />}
 
