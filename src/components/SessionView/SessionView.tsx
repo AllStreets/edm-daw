@@ -4,6 +4,8 @@ import { useUIStore } from '../../store/useUIStore';
 import { ClipCell } from './ClipCell';
 import { TrackHeader } from '../TrackList/TrackHeader';
 import type { Track } from '../../types';
+import { defaultPattern } from '../../types';
+import { SYNTH_PRESETS } from '../../engine/SynthPresets';
 
 // ─── Scene Header Cell ────────────────────────────────────────────────────────
 
@@ -219,6 +221,8 @@ export const SessionView: React.FC = () => {
     launchScene,
     isPlaying,
     assignClipToScene,
+    addPatternToTrack,
+    updateSynthSettings,
     updateScene,
     reorderScenes,
   } = useProjectStore();
@@ -257,6 +261,30 @@ export const SessionView: React.FC = () => {
   const handleEditClip = useCallback((trackId: string, patternId: string) => {
     openPianoRoll(trackId, patternId);
   }, [openPianoRoll]);
+
+  const PRESET_CATEGORIES = ['Leads', 'Basses', 'Pads', 'FX Presets'];
+
+  const handleSampleDrop = useCallback((
+    trackId: string,
+    sceneId: string,
+    data: { name: string; category: string; isImported: boolean }
+  ) => {
+    const track = project.tracks.find(t => t.id === trackId);
+    if (!track) return;
+
+    const presetName = data.name.split(' — ')[0];
+
+    // Apply synth preset if it's a preset category
+    if (PRESET_CATEGORIES.includes(data.category)) {
+      const preset = SYNTH_PRESETS[presetName];
+      if (preset) updateSynthSettings(trackId, preset);
+    }
+
+    // Create a new named pattern and assign it to this cell (replaces any existing clip)
+    const newPattern = defaultPattern({ name: presetName, color: track.color });
+    addPatternToTrack(trackId, newPattern);
+    assignClipToScene(sceneId, trackId, newPattern.id);
+  }, [project.tracks, updateSynthSettings, addPatternToTrack, assignClipToScene]);
 
   const handleSceneDragStart = useCallback((sceneIndex: number, e: React.MouseEvent) => {
     e.preventDefault();
@@ -647,6 +675,7 @@ export const SessionView: React.FC = () => {
                       patternName={effectivePattern?.name ?? pattern?.name}
                       trackColor={track.color}
                       isPlaying={isCellPlaying}
+                      onSampleDrop={data => handleSampleDrop(track.id, scene.id, data)}
                       onLaunch={() => {
                         selectTrack(track.id);
                         launchScene(scene.id);

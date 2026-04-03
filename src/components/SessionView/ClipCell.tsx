@@ -2,6 +2,12 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
+interface SampleDropData {
+  name: string;
+  category: string;
+  isImported: boolean;
+}
+
 interface ClipCellProps {
   trackId: string;
   sceneId: string;
@@ -14,6 +20,7 @@ interface ClipCellProps {
   onEdit?: () => void;
   onDuplicate?: () => void;
   onDelete?: () => void;
+  onSampleDrop?: (data: SampleDropData) => void;
 }
 
 // ─── Mini Waveform (fake animated bars) ──────────────────────────────────────
@@ -184,11 +191,38 @@ export const ClipCell: React.FC<ClipCellProps> = ({
   onEdit,
   onDuplicate,
   onDelete,
+  onSampleDrop,
 }) => {
   const hasClip = patternId !== null;
   const [hovered, setHovered] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [pulsePhase, setPulsePhase] = useState(0);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('application/x-daw-sample')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      setIsDragOver(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const raw = e.dataTransfer.getData('application/x-daw-sample');
+    if (!raw || !onSampleDrop) return;
+    try {
+      const data = JSON.parse(raw) as SampleDropData;
+      onSampleDrop(data);
+    } catch { /* ignore bad data */ }
+  }, [onSampleDrop]);
 
   // Pulse animation when playing
   useEffect(() => {
@@ -220,7 +254,10 @@ export const ClipCell: React.FC<ClipCellProps> = ({
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        onMouseLeave={() => { setHovered(false); }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         style={{
           width: 120,
           minWidth: 120,
@@ -237,32 +274,51 @@ export const ClipCell: React.FC<ClipCellProps> = ({
           borderBottom: '1px solid #1a1a2e',
 
           // Background
-          background: hasClip
-            ? isPlaying
-              ? `linear-gradient(135deg, rgba(${r},${g},${b},0.45) 0%, rgba(${r},${g},${b},0.22) 100%)`
+          background: isDragOver
+            ? 'rgba(153,69,255,0.18)'
+            : hasClip
+              ? isPlaying
+                ? `linear-gradient(135deg, rgba(${r},${g},${b},0.45) 0%, rgba(${r},${g},${b},0.22) 100%)`
+                : hovered
+                  ? `linear-gradient(135deg, rgba(${r},${g},${b},0.35) 0%, rgba(${r},${g},${b},0.15) 100%)`
+                  : `linear-gradient(135deg, rgba(${r},${g},${b},0.28) 0%, rgba(${r},${g},${b},0.10) 100%)`
               : hovered
-                ? `linear-gradient(135deg, rgba(${r},${g},${b},0.35) 0%, rgba(${r},${g},${b},0.15) 100%)`
-                : `linear-gradient(135deg, rgba(${r},${g},${b},0.28) 0%, rgba(${r},${g},${b},0.10) 100%)`
-            : hovered
-              ? 'rgba(153,69,255,0.08)'
-              : '#0a0a18',
+                ? 'rgba(153,69,255,0.08)'
+                : '#0a0a18',
 
           // Border
-          border: isPlaying
-            ? `1px solid rgba(${r},${g},${b},${glowIntensity})`
-            : hasClip
-              ? `1px solid rgba(${r},${g},${b},0.35)`
-              : hovered
-                ? '1px dashed #9945ff55'
-                : '1px dashed #1e1e2e',
+          border: isDragOver
+            ? '2px dashed #9945ff'
+            : isPlaying
+              ? `1px solid rgba(${r},${g},${b},${glowIntensity})`
+              : hasClip
+                ? `1px solid rgba(${r},${g},${b},0.35)`
+                : hovered
+                  ? '1px dashed #9945ff55'
+                  : '1px dashed #1e1e2e',
 
-          boxShadow: isPlaying
-            ? `inset 0 0 16px rgba(${r},${g},${b},0.25), 0 0 12px rgba(${r},${g},${b},0.35)`
-            : hasClip && hovered
-              ? `inset 0 0 10px rgba(${r},${g},${b},0.15)`
-              : 'none',
+          boxShadow: isDragOver
+            ? '0 0 16px #9945ff44'
+            : isPlaying
+              ? `inset 0 0 16px rgba(${r},${g},${b},0.25), 0 0 12px rgba(${r},${g},${b},0.35)`
+              : hasClip && hovered
+                ? `inset 0 0 10px rgba(${r},${g},${b},0.15)`
+                : 'none',
         }}
       >
+        {/* Drop target overlay */}
+        {isDragOver && (
+          <div style={{
+            position: 'absolute', inset: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            pointerEvents: 'none', zIndex: 2,
+          }}>
+            <span style={{ fontSize: 11, color: '#9945ff', fontWeight: 700, letterSpacing: 1 }}>
+              {hasClip ? '↺ REPLACE' : '+ DROP'}
+            </span>
+          </div>
+        )}
+
         {hasClip ? (
           <>
             {/* Playing indicator bar at top */}
