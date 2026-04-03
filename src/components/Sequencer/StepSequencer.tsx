@@ -120,7 +120,7 @@ const VelocityKnob: React.FC<VelocityKnobProps> = ({ value, color, onChange }) =
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId }) => {
-  const { project, toggleStep, updatePattern, currentStep } = useProjectStore();
+  const { project, toggleStep, updatePattern, currentStep, setStepVelocity } = useProjectStore();
 
   const track = project.tracks.find(t => t.id === trackId);
   const pattern = track?.patterns.find(p => p.id === patternId);
@@ -148,15 +148,15 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
     );
   }
 
-  const stepData: boolean[][] = pattern.stepData ?? Array.from({ length: 16 }, () => Array(32).fill(false));
+  const stepData: number[][] = pattern.stepData ?? Array.from({ length: 16 }, () => Array(32).fill(0));
 
   // Pad stepData to always have 16 rows (non-destructive — local variable only)
-  const paddedStepData: boolean[][] = stepData.length >= 16
+  const paddedStepData: number[][] = stepData.length >= 16
     ? stepData
     : [
         ...stepData,
         ...Array.from({ length: 16 - stepData.length }, () =>
-          Array(pattern.steps).fill(false)
+          Array(pattern.steps).fill(0)
         ),
       ];
 
@@ -278,7 +278,7 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
         const items: Array<{ row: number; stepOffset: number; on: boolean }> = [];
         for (let r = selRect.rowMin; r <= selRect.rowMax; r++) {
           for (let s = selRect.stepMin; s <= selRect.stepMax; s++) {
-            items.push({ row: r - selRect.rowMin, stepOffset: s - selRect.stepMin, on: paddedStepData[r]?.[s] ?? false });
+            items.push({ row: r - selRect.rowMin, stepOffset: s - selRect.stepMin, on: (paddedStepData[r]?.[s] ?? 0) > 0 });
           }
         }
         stepClipboard.current = items;
@@ -292,7 +292,7 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
           const targetStep = pasteCol + stepOffset;
           const targetRow = row;
           if (targetStep < stepCount && targetRow < 16) {
-            const current = paddedStepData[targetRow]?.[targetStep] ?? false;
+            const current = (paddedStepData[targetRow]?.[targetStep] ?? 0) > 0;
             if (current !== on) toggleStep(trackId, patternId, targetRow, targetStep);
           }
         });
@@ -319,7 +319,8 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
   };
 
   const renderStepButton = (row: number, step: number) => {
-    const isOn = paddedStepData[row]?.[step] ?? false;
+    const vel = paddedStepData[row]?.[step] ?? 0;
+    const isOn = vel > 0;
     const isCurrent = currentStep === step;
     const groupIndex = Math.floor(step / 4);
     const isEvenGroup = groupIndex % 2 === 0;
@@ -499,24 +500,69 @@ export const StepSequencer: React.FC<StepSequencerProps> = ({ trackId, patternId
         <div className="flex-1 overflow-x-auto">
           <div className="flex flex-col gap-1.5 min-w-max">
             {DRUM_NAMES.map((_name, row) => (
-              <div
-                key={row}
-                className="flex gap-0.5 items-center h-8 rounded transition-colors"
-                style={{
-                  background: dragOverRow === row ? `${DRUM_COLORS[row]}15` : 'transparent',
-                }}
-                onDragOver={e => { handleRowDragOver(e, row); setDragOverRow(row); }}
-                onDragLeave={() => setDragOverRow(null)}
-                onDrop={e => handleRowDrop(e, row)}
-              >
-                {Array.from({ length: visibleSteps }, (_, step) => (
-                  <React.Fragment key={step}>
-                    {step > 0 && step % 4 === 0 && (
-                      <div className="w-px h-6 bg-[#3a3a50] flex-shrink-0 mx-0.5" />
-                    )}
-                    {renderStepButton(row, step)}
-                  </React.Fragment>
-                ))}
+              <div key={row} className="flex flex-col gap-0.5">
+                {/* Velocity bars row */}
+                <div className="flex gap-0.5 items-end" style={{ height: 16 }}>
+                  {Array.from({ length: visibleSteps }, (_, step) => {
+                    const vel = paddedStepData[row]?.[step] ?? 0;
+                    const barH = vel > 0 ? Math.max(2, Math.round((vel / 127) * 16)) : 0;
+                    return (
+                      <React.Fragment key={step}>
+                        {step > 0 && step % 4 === 0 && <div style={{ width: 5 }} />}
+                        <div
+                          style={{
+                            width: 32, height: 16,
+                            display: 'flex', alignItems: 'flex-end', cursor: vel > 0 ? 'ns-resize' : 'default',
+                          }}
+                          onMouseDown={vel > 0 ? (e) => {
+                            e.preventDefault();
+                            const startY = e.clientY;
+                            const startVel = vel;
+                            const onMove = (me: MouseEvent) => {
+                              const dy = startY - me.clientY; // drag up = higher
+                              const newVel = Math.max(1, Math.min(127, Math.round(startVel + dy * 1.5)));
+                              setStepVelocity(trackId, patternId, row, step, newVel);
+                            };
+                            const onUp = () => {
+                              window.removeEventListener('mousemove', onMove);
+                              window.removeEventListener('mouseup', onUp);
+                            };
+                            window.addEventListener('mousemove', onMove);
+                            window.addEventListener('mouseup', onUp);
+                          } : undefined}
+                        >
+                          {vel > 0 && (
+                            <div style={{
+                              width: '100%', height: barH,
+                              background: DRUM_COLORS[row],
+                              borderRadius: '2px 2px 0 0',
+                              opacity: 0.8,
+                            }} />
+                          )}
+                        </div>
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+                {/* Step buttons row */}
+                <div
+                  className="flex gap-0.5 items-center h-8 rounded transition-colors"
+                  style={{
+                    background: dragOverRow === row ? `${DRUM_COLORS[row]}15` : 'transparent',
+                  }}
+                  onDragOver={e => { handleRowDragOver(e, row); setDragOverRow(row); }}
+                  onDragLeave={() => setDragOverRow(null)}
+                  onDrop={e => handleRowDrop(e, row)}
+                >
+                  {Array.from({ length: visibleSteps }, (_, step) => (
+                    <React.Fragment key={step}>
+                      {step > 0 && step % 4 === 0 && (
+                        <div className="w-px h-6 bg-[#3a3a50] flex-shrink-0 mx-0.5" />
+                      )}
+                      {renderStepButton(row, step)}
+                    </React.Fragment>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
