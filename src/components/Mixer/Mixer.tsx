@@ -4,6 +4,7 @@ import { useAnimationFrame } from '../../hooks/useAnimationFrame';
 import { ChannelStrip } from './ChannelStrip';
 import { StereoLevelMeter } from '../Meters/LevelMeter';
 import { audioEngine } from '../../engine/AudioEngine';
+import { FXChainPanel } from '../Effects/FXChainPanel';
 
 // Master channel strip
 function MasterStrip() {
@@ -197,8 +198,9 @@ function SendReturnStrip({ name, color, effectKey }: { name: string; color: stri
 }
 
 export function Mixer() {
-  const { project, selectedTrackId, selectTrack } = useProjectStore();
+  const { project, selectedTrackId, selectTrack, openFxTrackId, closeFxPanel } = useProjectStore();
   const [showSendReturns] = useState(true);
+  const fxTrack = openFxTrackId ? project.tracks.find(t => t.id === openFxTrackId) : null;
 
   return (
     <div
@@ -288,6 +290,16 @@ export function Mixer() {
           <MasterStrip />
         </div>
       </div>
+
+      {/* FX Chain Panel */}
+      {fxTrack && (
+        <FXChainPanel
+          trackId={fxTrack.id}
+          trackName={fxTrack.name}
+          trackColor={fxTrack.color}
+          onClose={closeFxPanel}
+        />
+      )}
 
       {/* Bottom status bar */}
       <div

@@ -8,6 +8,9 @@ import type {
   Scene,
   Effect,
   SynthSettings,
+  TrackEffect,
+  TrackFXType,
+  TrackFXSettings,
 } from '../types';
 import {
   defaultTrack,
@@ -104,6 +107,7 @@ interface ProjectState {
   showPianoRoll: boolean;
   showSynthEditor: boolean;
   showEffectsRack: boolean;
+  openFxTrackId: string | null;
   isPlaying: boolean;
   isRecording: boolean;
   loopEnabled: boolean;
@@ -120,6 +124,12 @@ interface ProjectState {
   togglePianoRoll: () => void;
   toggleSynthEditor: () => void;
   toggleEffectsRack: () => void;
+  openFxPanel: (trackId: string) => void;
+  closeFxPanel: () => void;
+  addTrackEffect: (trackId: string, fxType: TrackFXType) => void;
+  removeTrackEffect: (trackId: string, effectId: string) => void;
+  updateTrackEffect: (trackId: string, effectId: string, settings: Partial<TrackFXSettings>) => void;
+  toggleTrackEffect: (trackId: string, effectId: string) => void;
 
   setBPM: (bpm: number) => void;
   play: () => Promise<void>;
@@ -186,6 +196,7 @@ export const useProjectStore = create<ProjectState>()(
     showPianoRoll: false,
     showSynthEditor: false,
     showEffectsRack: false,
+    openFxTrackId: null,
     isPlaying: false,
     isRecording: false,
     loopEnabled: false,
@@ -231,6 +242,67 @@ export const useProjectStore = create<ProjectState>()(
 
     toggleEffectsRack() {
       set(draft => { draft.showEffectsRack = !draft.showEffectsRack; });
+    },
+
+    openFxPanel(trackId) {
+      set(draft => { draft.openFxTrackId = trackId; });
+    },
+
+    closeFxPanel() {
+      set(draft => { draft.openFxTrackId = null; });
+    },
+
+    addTrackEffect(trackId, fxType) {
+      get()._pushUndo();
+      const defaults: Record<TrackFXType, TrackFXSettings> = {
+        reverb:     { fxType: 'reverb',     wet: 0.3,  decay: 2,      preDelay: 0.01 },
+        delay:      { fxType: 'delay',      wet: 0.3,  time: '8n',    feedback: 0.3,  pingPong: false },
+        filter:     { fxType: 'filter',     filterType: 'lowpass', frequency: 2000, Q: 1 },
+        distortion: { fxType: 'distortion', wet: 0.5,  distortion: 0.3 },
+        compressor: { fxType: 'compressor', threshold: -24, ratio: 4, attack: 3, release: 150, knee: 6 },
+      };
+      set(draft => {
+        const track = draft.project.tracks.find(t => t.id === trackId);
+        if (track) {
+          track.effects.push({ id: crypto.randomUUID(), on: true, settings: defaults[fxType] });
+          draft.project.modifiedAt = new Date().toISOString();
+        }
+      });
+      const track = get().project.tracks.find(t => t.id === trackId);
+      if (track) audioEngine.applyTrackEffects(trackId, track.effects);
+    },
+
+    removeTrackEffect(trackId, effectId) {
+      get()._pushUndo();
+      set(draft => {
+        const track = draft.project.tracks.find(t => t.id === trackId);
+        if (track) {
+          track.effects = track.effects.filter(e => e.id !== effectId);
+          draft.project.modifiedAt = new Date().toISOString();
+        }
+      });
+      const track = get().project.tracks.find(t => t.id === trackId);
+      if (track) audioEngine.applyTrackEffects(trackId, track.effects);
+    },
+
+    updateTrackEffect(trackId, effectId, settings) {
+      set(draft => {
+        const track = draft.project.tracks.find(t => t.id === trackId);
+        const effect = track?.effects.find(e => e.id === effectId);
+        if (effect) Object.assign(effect.settings, settings);
+      });
+      const track = get().project.tracks.find(t => t.id === trackId);
+      if (track) audioEngine.applyTrackEffects(trackId, track.effects);
+    },
+
+    toggleTrackEffect(trackId, effectId) {
+      set(draft => {
+        const track = draft.project.tracks.find(t => t.id === trackId);
+        const effect = track?.effects.find(e => e.id === effectId);
+        if (effect) effect.on = !effect.on;
+      });
+      const track = get().project.tracks.find(t => t.id === trackId);
+      if (track) audioEngine.applyTrackEffects(trackId, track.effects);
     },
 
     setBPM(bpm) {

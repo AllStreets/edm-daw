@@ -252,7 +252,7 @@ function VerticalFader({
 // ── Channel Strip ─────────────────────────────────────────────────────────────
 
 export function ChannelStrip({ track, isSelected, onClick }: ChannelStripProps) {
-  const { setTrackVolume, setTrackPan, toggleMute, toggleSolo, toggleArmed } = useProjectStore();
+  const { setTrackVolume, setTrackPan, toggleMute, toggleSolo, toggleArmed, openFxPanel } = useProjectStore();
   const [levelL, setLevelL] = useState(0);
   const [levelR, setLevelR] = useState(0);
   const [reverbSend, setReverbSend] = useState(0);
@@ -307,7 +307,18 @@ export function ChannelStrip({ track, isSelected, onClick }: ChannelStripProps) 
 
       {/* FX insert area */}
       <div className="w-full flex flex-col gap-0.5">
-        {track.effects.slice(0, 3).map((fx) => (
+        <button
+          onClick={e => { e.stopPropagation(); openFxPanel(track.id); }}
+          style={{
+            width: '100%', height: 14, background: track.effects.length > 0 ? '#1a2a1a' : '#111',
+            border: '1px solid', borderColor: track.effects.length > 0 ? '#00ff8844' : '#222',
+            borderRadius: 3, color: track.effects.length > 0 ? '#00ff88' : '#555',
+            fontSize: 8, fontFamily: 'monospace', cursor: 'pointer', lineHeight: '14px',
+          }}
+        >
+          {track.effects.length > 0 ? `FX (${track.effects.length})` : 'FX'}
+        </button>
+        {track.effects.slice(0, 2).map((fx) => (
           <div
             key={fx.id}
             className="w-full rounded text-center text-[8px] font-mono truncate px-1"
@@ -318,14 +329,9 @@ export function ChannelStrip({ track, isSelected, onClick }: ChannelStripProps) 
               height: 14, lineHeight: '14px',
             }}
           >
-            {fx.type.slice(0, 4).toUpperCase()}
+            {fx.settings.fxType.slice(0, 4).toUpperCase()}
           </div>
         ))}
-        {track.effects.length === 0 && (
-          <div className="w-full rounded text-center text-[8px] font-mono" style={{ height: 14, background: '#111', color: '#333', lineHeight: '14px' }}>
-            NO FX
-          </div>
-        )}
       </div>
 
       {/* Send knobs — REAL reverb/delay sends */}
